@@ -20,7 +20,7 @@ fn parse_usize(input: &str) -> IResult<&str, usize> {
 }
 
 fn identifier(input: &str) -> IResult<&str, &str> {
-    recognize(many0(alt((alphanumeric1, tag("_")))))(input)
+    recognize(many0(alt((alphanumeric1, tag("_"), tag("'")))))(input)
 }
 
 use nom::{error::ParseError, Parser};
@@ -135,8 +135,8 @@ enum Expression {
     },
     EZ {
         name: usize,
-        val: usize,
         ty: usize,
+        val: usize,
         body: usize,
     },
 }
@@ -176,8 +176,8 @@ fn parse_ea(input: &str) -> IResult<&str, Expression> {
 fn parse_ez(input: &str) -> IResult<&str, Expression> {
     let (rest, _) = spaced(tag("#EZ"))(input)?;
     let (rest, name) = spaced(parse_usize)(rest)?;
-    let (rest, val) = spaced(parse_usize)(rest)?;
     let (rest, ty) = spaced(parse_usize)(rest)?;
+    let (rest, val) = spaced(parse_usize)(rest)?;
     let (rest, body) = parse_usize(rest)?;
     Ok((
         rest,
@@ -372,7 +372,7 @@ impl Instruction {
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
-fn btreemap_hash(map: &BTreeMap<usize, usize>) -> u64 {
+fn btreemap_hash<K: Hash, V: Hash>(map: &BTreeMap<K, V>) -> u64 {
     let mut s = DefaultHasher::new();
     map.hash(&mut s);
     s.finish()
@@ -416,6 +416,7 @@ impl LeanEncoding {
                     Instruction::IUniverse(universe) => res.universes.push(universe),
                     Instruction::IExpression(expression) => res.expressions.push(expression),
                     Instruction::IDefinition(definition) => {
+                        //println!("parsing def: {:?}", definition.name());
                         res.name_to_def
                             .insert(definition.name(), res.definitions.len());
 
@@ -486,12 +487,14 @@ impl LeanEncoding {
     pub fn export_theorem(
         &self,
         name: &str,
-        axioms: &mut BTreeMap<String, Term>,
+        axioms: &mut HashMap<String, Term>,
         inductives: &mut HashMap<String, Inductive>,
-        cache: &mut Option<HashMap<(usize, u64), Term>>,
+        cache: &mut Option<HashMap<(usize, u64, u64), Term>>,
     ) -> Result<Theorem, String> {
         debug!("Exporting theorem: {}", name);
+        //println!("Name: {}", name);
         let def = self.lookup_definition(name)?;
+        //println!("def: {:?}", def);
         match def {
             Definition::Def {
                 name,
@@ -499,15 +502,36 @@ impl LeanEncoding {
                 ty,
                 universe_params: universes,
             } => {
+                let mut universe_mapping = BTreeMap::new();
+                // just set any uparams to 0 so we get more coverage
                 if universes.len() != 0 {
-                    return Err(format!(
-                        "Cannot export a theorem that accepts universe parameters!"
-                    ));
+                    //println!("universes are {:?}", universes);
+                    for u in universes {
+                        universe_mapping.insert(*u, 0usize);
+                    }
+
+                    //return Err(format!(
+                    //    "Cannot export a theorem that accepts universe parameters!"
+                    //));
                 }
                 // TODO: only include inds and axs used
-                let val_term =
-                    self.export_expr(*val, axioms, inductives, &BTreeMap::new(), cache)?;
-                let ty_term = self.export_expr(*ty, axioms, inductives, &BTreeMap::new(), cache)?;
+                let val_term = self.export_expr(
+                    *val,
+                    axioms,
+                    inductives,
+                    &universe_mapping,
+                    &mut BTreeMap::new(),
+                    cache,
+                )?;
+                //println!("AT TYPE NOW");
+                let ty_term = self.export_expr(
+                    *ty,
+                    axioms,
+                    inductives,
+                    &universe_mapping,
+                    &mut BTreeMap::new(),
+                    cache,
+                )?;
                 Ok(Theorem::new(val_term, ty_term, axioms, inductives))
             }
             _ => Err(format!("Definition named {} is not a theorem!", name)),
@@ -531,16 +555,17 @@ impl LeanEncoding {
     fn export_expr(
         &self,
         index: usize,
-        axioms: &mut BTreeMap<String, Term>,
+        axioms: &mut HashMap<String, Term>,
         inductives: &mut HashMap<String, Inductive>,
         universes: &BTreeMap<usize, usize>,
-        cache: &mut Option<HashMap<(usize, u64), Term>>,
+        let_bindings: &mut BTreeMap<usize, Term>,
+        cache: &mut Option<HashMap<(usize, u64, u64), Term>>,
     ) -> Result<Term, String> {
         // TODO: fix caching...
         debug!("Export expr: {}", index);
         if let Some(term) = cache
             .as_ref()
-            .map(|c| c.get(&(index, btreemap_hash(universes))))
+            .map(|c| c.get(&(index, btreemap_hash(universes), btreemap_hash(let_bindings))))
             .flatten()
         {
             debug!("{} cached!", index);
@@ -563,11 +588,14 @@ impl LeanEncoding {
                 axioms,
                 inductives,
                 universes,
+                let_bindings,
                 cache,
             )?,
             Expression::EA { e1, e2 } => {
-                let e1_term = self.export_expr(*e1, axioms, inductives, universes, cache)?;
-                let e2_term = self.export_expr(*e2, axioms, inductives, universes, cache)?;
+                let e1_term =
+                    self.export_expr(*e1, axioms, inductives, universes, let_bindings, cache)?;
+                let e2_term =
+                    self.export_expr(*e2, axioms, inductives, universes, let_bindings, cache)?;
                 term::app(e1_term, e2_term)
             }
             Expression::EL {
@@ -576,9 +604,13 @@ impl LeanEncoding {
                 domain,
                 body,
             } => {
+                //println!("hey my universes are: {:?}", universes);
                 let domain_term =
-                    self.export_expr(*domain, axioms, inductives, universes, cache)?;
-                let body_term = self.export_expr(*body, axioms, inductives, universes, cache)?;
+                    self.export_expr(*domain, axioms, inductives, universes, let_bindings, cache)?;
+                //println!("hey my universes are: {:?}", universes);
+                let body_term =
+                    self.export_expr(*body, axioms, inductives, universes, let_bindings, cache)?;
+                //println!("hey my universes are: {:?}", universes);
                 term::lam(domain_term, body_term)
             }
             Expression::EP {
@@ -588,8 +620,9 @@ impl LeanEncoding {
                 body,
             } => {
                 let domain_term =
-                    self.export_expr(*domain, axioms, inductives, universes, cache)?;
-                let body_term = self.export_expr(*body, axioms, inductives, universes, cache)?;
+                    self.export_expr(*domain, axioms, inductives, universes, let_bindings, cache)?;
+                let body_term =
+                    self.export_expr(*body, axioms, inductives, universes, let_bindings, cache)?;
                 term::pi(domain_term, body_term)
             }
             Expression::EZ {
@@ -598,12 +631,38 @@ impl LeanEncoding {
                 ty,
                 body,
             } => {
-                return Err("Let expression unsupported!".to_string());
+                //println!("YOLO");
+                // replace const name with value in body
+                let ty_term =
+                    self.export_expr(*ty, axioms, inductives, universes, let_bindings, cache)?;
+                let val_term =
+                    self.export_expr(*val, axioms, inductives, universes, let_bindings, cache)?;
+                //println!("val term: {:?}", val_term);
+                //println!(
+                //    "binding name: {} to {:?}, type: ",
+                //    self.resolve_name(*name),
+                //    val_term,
+                //    //ty_term
+                //);
+                //let_bindings.insert(*name, val_term.clone());
+                let body_term =
+                    self.export_expr(*body, axioms, inductives, universes, let_bindings, cache)?;
+                //println!("got body term: {:?}", body_term);
+                //let_bindings.remove(name);
+                //
+                term::app(term::lam(ty_term, body_term), val_term)
+
+                //body_term
             }
         };
-        cache
-            .as_mut()
-            .map(|c| c.insert((index, btreemap_hash(universes)), res.clone()));
+        //println!("inserting {} into cache...", index);
+        cache.as_mut().map(|c| {
+            c.insert(
+                (index, btreemap_hash(universes), btreemap_hash(let_bindings)),
+                res.clone(),
+            )
+        });
+
         Ok(res)
     }
 
@@ -617,7 +676,9 @@ impl LeanEncoding {
             return Ok(0);
         }
 
+        //println!("universes: {:?}", universes);
         let univ = &self.universes[index - 1];
+        //println!("got univ: {:?}", univ);
         let level = match univ {
             Universe::US(prior) => 1 + self.export_universe(*prior, universes)?,
             Universe::UM(i, j) => max(
@@ -628,13 +689,18 @@ impl LeanEncoding {
                 self.export_universe(*i, universes)?,
                 self.export_universe(*j, universes)?,
             ),
-            Universe::UP(name) => *universes.get(&name).ok_or(format!(
-                "Unmapped universe param {} (idx: {}) (have: {:?})",
-                self.resolve_name(*name),
-                *name,
-                universes
-            ))?,
+            Universe::UP(name) => {
+                let res = *universes.get(&name).ok_or(format!(
+                    "Unmapped universe param {} (idx: {}) (have: {:?})",
+                    self.resolve_name(*name),
+                    *name,
+                    universes
+                ))?;
+                //println!("inst UP {:?} with sort {:?}", self.resolve_name(*name), res);
+                res
+            }
         };
+        //println!("level was: {}", level);
         Ok(level)
     }
 
@@ -659,11 +725,17 @@ impl LeanEncoding {
         //        .map(|u| self.export_universe(*u, universes))
         //        .collect::<Result<Vec<usize>, _>>()?,
         //);
+        //println!("def is: {:?}", def);
         //println!("old map: {:?}", universes);
+        //println!("inst: {:?}", universe_instantiation);
         for i in 0..min(universe_params.len(), universe_instantiation.len()) {
-            let resolved_universe = self.export_universe(universe_instantiation[i], &res)?;
-            //println!("mapping {} to {}", universe_params[i], resolved_universe);
-            //res.entry(universe_params[i]).or_insert(resolved_universe);
+            // We don't use res here because the export format won't change UP values
+            // in a single constant...
+            // e.g. #EC 64 3 12,
+            // 3 will set UP(u)
+            // 12 will set UP(v)
+            // if 12 depends on u, it depends on OLD UP(u), not new one
+            let resolved_universe = self.export_universe(universe_instantiation[i], universes)?;
             res.insert(universe_params[i], resolved_universe);
         }
         //println!("new map: {:?}", res);
@@ -674,12 +746,18 @@ impl LeanEncoding {
         &self,
         name: usize,
         universe_instantiation: &[usize],
-        axioms: &mut BTreeMap<String, Term>,
+        axioms: &mut HashMap<String, Term>,
         inductives: &mut HashMap<String, Inductive>,
         universes: &BTreeMap<usize, usize>,
-        cache: &mut Option<HashMap<(usize, u64), Term>>,
+        let_bindings: &mut BTreeMap<usize, Term>,
+        cache: &mut Option<HashMap<(usize, u64, u64), Term>>,
     ) -> Result<Term, String> {
         debug!("Exported const: {}", name);
+
+        // if let-bound, then just return value
+        if let Some(term) = let_bindings.get(&name) {
+            return Ok(term.clone());
+        }
         // TODO: const cache
 
         // cleanup time...
@@ -703,9 +781,9 @@ impl LeanEncoding {
                     axioms,
                     inductives,
                     universes,
+                    let_bindings,
                     cache,
-                )
-                .unwrap();
+                )?;
             }
 
             let universe_params = self.definitions[*ind].universe_params();
@@ -716,14 +794,35 @@ impl LeanEncoding {
                 .map(|p| universes.get(p).unwrap().to_string())
                 .collect::<Vec<_>>()
                 .join(",");
-            let name_string = name_string + ".{" + &universe_inst_string + "}";
+            //let name_string = name_string + ".{" + &universe_inst_string + "}";
 
-            // TODO: fix...
-            return Ok(term::axiom(name_string));
+            let ind_name = self.resolve_name(def.name());
+            let rule_name = name_string
+                .strip_prefix(&ind_name)
+                .unwrap()
+                .strip_prefix(".")
+                .unwrap();
+            let ind_name_full = ind_name + ".{" + &universe_inst_string + "}";
+
+            return Ok(term::ind_ctor(ind_name_full, rule_name));
+        }
+
+        if name_string.starts_with("quot") {
+            return Err("We don't support quot".to_string());
         }
 
         // if const is an induction eliminator...
-        if name_string.ends_with(".rec") {
+        if name_string.ends_with(".rec")
+            && !matches!(
+                self.lookup_definition_usize(name),
+                Ok(Definition::Def { .. })
+            )
+        {
+            //println!("universe_instantiation: {:?}", universe_instantiation);
+            // Some defs called rec.... so check that
+            // e.g. see mul_opposite.rec
+
+            //
             //println!(
             //    "exporting rec: {} {:?}",
             //    name_string, universe_instantiation
@@ -738,6 +837,10 @@ impl LeanEncoding {
                 c == '{' || c == '}' || c == ',' || c == '.' || char::is_numeric(c)
             });
             let def = self.lookup_definition(inductive_name)?;
+            //println!(
+            //    "uni inst for {} is {:?}",
+            //    name_string, &universe_instantiation
+            //);
             // if we are passing a universe param to rec, skip the first uparam for the def
             let def_universe_instantiation =
                 if def.universe_params().len() + 1 == universe_instantiation.len() {
@@ -745,16 +848,19 @@ impl LeanEncoding {
                 } else {
                     &universe_instantiation
                 };
-            let universes =
+            let test_universes =
                 self.instantiate_universes(def, universes, def_universe_instantiation)?;
 
-            let universe_instantiation = universe_instantiation
-                .iter()
-                .map(|u| self.export_universe(*u, &universes).unwrap())
-                .collect::<Vec<_>>();
+            //println!("universes: {:?}", universes);
+            //println!("universe_instantiation: {:?}", universe_instantiation);
+            //let universe_instantiation = universe_instantiation
+            //    .iter()
+            //    .map(|u| self.export_universe(*u, &universes).unwrap())
+            //    .collect::<Vec<_>>();
+            //println!("universe_instantiation: {:?}", universe_instantiation);
             let motive_universe_level =
                 if def.universe_params().len() + 1 == universe_instantiation.len() {
-                    universe_instantiation[0]
+                    self.export_universe(universe_instantiation[0], universes)?
                 } else {
                     0
                 };
@@ -769,6 +875,9 @@ impl LeanEncoding {
             //    "instantiating universes for rec {}: {:?}",
             //    name_string, universes
             //);
+            //println!("universes: {:?}", universes);
+            let universes = self.instantiate_universes(def, &universes, universe_instantiation)?;
+            //println!("universes: {:?}", universes);
             let universe_inst_string = def
                 .universe_params()
                 .iter()
@@ -781,12 +890,21 @@ impl LeanEncoding {
                 .collect::<Result<Vec<_>, _>>()?
                 .join(",");
 
+            //println!("universe_inst_string: {:?}", universe_inst_string);
+
             let rec_name = format!(
                 "{}.{{{}}}.rec.{{{}}}",
                 inductive_name.to_owned(),
                 &universe_inst_string,
                 motive_universe_level,
             );
+            //println!(
+            //    "universes: {:?}, uparams: {:?}",
+            //    universes,
+            //    def.universe_params()
+            //);
+            let instantiated_ind_name = format!("{}.{{{}}}", inductive_name, universe_inst_string);
+            //println!("universes: {:?}", universes);
 
             //println!(
             //    "exporting def with rec: {:?}, {:?}",
@@ -794,44 +912,53 @@ impl LeanEncoding {
             //);
             if axioms.contains_key(&rec_name) {
                 //println!("rec cached!");
-                return Ok(term::axiom(rec_name));
+                return Ok(term::ind_rec(instantiated_ind_name, motive_universe_level));
             }
             //println!("got name {}", inductive_name);
             //println!("2");
             //let universes =
             //    self.instantiate_universes(def, &BTreeMap::new(), universe_instantiation)?;
-            let universes = self.instantiate_universes(def, &universes, universe_instantiation)?;
             self.export_definition(
                 def,
                 universe_instantiation,
                 axioms,
                 inductives,
                 &universes,
+                let_bindings,
                 cache,
-            )
-            .unwrap();
+            )?;
             // Fully qualified name of the inductive type
-            let instantiated_ind_name = format!("{}.{{{}}}", inductive_name, universe_inst_string);
+            //println!("universes: {:?}", universes);
             let ind = inductives.get_mut(&instantiated_ind_name).expect(&format!(
-                "Failed to look up inductive {}!",
-                instantiated_ind_name
+                "Failed to look up inductive {}, added def {:?}!",
+                instantiated_ind_name, def
             ));
+
             //println!("axioms: {:?}", axioms);
             //println!("inds: {:?}", inductives);
             //println!("adding recursion principle: {}", rec_name);
-            axioms.insert(rec_name.clone(), ind.elim(motive_universe_level));
+            //axioms.insert(rec_name.clone(), ind.elim(motive_universe_level));
             //println!("Exporting rec: {}", name_string);
-            return Ok(term::axiom(rec_name));
+            return Ok(term::ind_rec(instantiated_ind_name, motive_universe_level));
         }
 
+        //println!("inductive: {}", name_string);
         let def = self.lookup_definition_usize(name)?;
         let universes = self.instantiate_universes(def, universes, universe_instantiation)?;
+        if name == 64 {
+            //println!(
+            //    "Pprod universes: {:?} {:?}",
+            //    universes, universe_instantiation
+            //);
+        }
+        //println!("universes: {:?}", universes);
         self.export_definition(
             def,
             universe_instantiation,
             axioms,
             inductives,
             &universes,
+            let_bindings,
             cache,
         )
     }
@@ -841,12 +968,14 @@ impl LeanEncoding {
         def: &Definition,
         universe_instantiation: &[usize], // TODO: remove if possible, only used for resolving ind
         // name
-        axioms: &mut BTreeMap<String, Term>,
+        axioms: &mut HashMap<String, Term>,
         inductives: &mut HashMap<String, Inductive>,
         universes: &BTreeMap<usize, usize>,
-        cache: &mut Option<HashMap<(usize, u64), Term>>,
+        let_bindings: &mut BTreeMap<usize, Term>,
+        cache: &mut Option<HashMap<(usize, u64, u64), Term>>,
     ) -> Result<Term, String> {
         debug!("Exported def: {}", self.resolve_name(def.name()));
+        //println!("Export def: {}", self.resolve_name(def.name()));
         match def {
             Definition::Def {
                 name,
@@ -856,7 +985,7 @@ impl LeanEncoding {
             } => {
                 // TODO: ensure it type checks
                 //let ty_term = self.export_expr(ty, axioms, inductives, combined_univs)?;
-                self.export_expr(*val, axioms, inductives, &universes, cache)
+                self.export_expr(*val, axioms, inductives, &universes, let_bindings, cache)
             }
             Definition::Axiom {
                 name,
@@ -866,7 +995,8 @@ impl LeanEncoding {
                 // TODO: ensure it type checks
                 //let ty_term = self.export_expr(ty, axioms, inductives, combined_univs)?;
                 let name_string = self.resolve_name(*name);
-                let ty_term = self.export_expr(*ty, axioms, inductives, &universes, cache)?;
+                let ty_term =
+                    self.export_expr(*ty, axioms, inductives, &universes, let_bindings, cache)?;
                 axioms.insert(name_string.clone(), ty_term);
                 Ok(term::axiom(name_string))
             }
@@ -897,39 +1027,71 @@ impl LeanEncoding {
                     })
                     .collect::<Result<Vec<_>, _>>()?
                     .join(",");
-                let name_string = self.resolve_name(*name) + ".{" + &universe_inst_string + "}";
+                let name_string_raw = self.resolve_name(*name);
+                let name_string = name_string_raw.clone() + ".{" + &universe_inst_string + "}";
+                //println!("Export full: {}", name_string);
+                //println!("exporting inductive: {}", name_string);
                 //println!(
                 //    "name_string: {:?}, univ_params: {:?}, universes: {:?}",
                 //    name_string, universe_params, universes
                 //);
                 if inductives.contains_key(&name_string) {
-                    return Ok(term::axiom(name_string));
+                    return Ok(term::ind(name_string));
                 }
 
-                //println!("getting ty for {} (universes {:?})", name_string, universes);
-                let ty_term = self.export_expr(*ty, axioms, inductives, &universes, cache)?;
+                let ty_term =
+                    self.export_expr(*ty, axioms, inductives, &universes, let_bindings, cache)?;
+
+                // get type with non-zero u params to see if this is truly nondependent or not
+                // can't do in kernel because we lose uparam info.
+                let universes_type = universes.iter().map(|(k, _)| (*k, 1)).collect();
+                let test_ty = self.export_expr(
+                    *ty,
+                    axioms,
+                    inductives,
+                    &universes_type,
+                    let_bindings,
+                    cache,
+                )?;
+                let non_dependent = if matches!(*test_ty.body(), term::TermData::Sort(0)) {
+                    true
+                } else {
+                    false
+                };
                 //println!("got ty {:?} for {}", ty_term, name_string);
 
                 // TODO: maybe not best design... Insert a placeholder to prevent
                 //       infinite recursion when resolving the types of the induction
                 //       rules
-                let ind = Inductive::new(&name_string, *num_params, ty_term.clone(), &[]);
+                let ind = Inductive::new(
+                    &name_string,
+                    *num_params,
+                    ty_term.clone(),
+                    &[],
+                    non_dependent,
+                );
                 inductives.insert(name_string.clone(), ind);
 
                 let mut rules = Vec::new();
                 for (name, ty) in intros {
-                    let rule_name = self.resolve_name(*name) + ".{" + &universe_inst_string + "}";
+                    let raw_name = self.resolve_name(*name);
+                    let rule_name = raw_name
+                        .strip_prefix(&name_string_raw)
+                        .unwrap()
+                        .strip_prefix(".")
+                        .unwrap();
                     //println!(
                     //    "exporting rule {} for {} with univs: {:?}",
                     //    rule_name, name_string, universes
                     //);
-                    let rule_ty = self.export_expr(*ty, axioms, inductives, &universes, cache)?;
+                    let rule_ty =
+                        self.export_expr(*ty, axioms, inductives, &universes, let_bindings, cache)?;
                     rules.push(InductiveRule::new(&rule_name, rule_ty));
                 }
 
-                let ind = Inductive::new(&name_string, *num_params, ty_term, &rules);
+                let ind = Inductive::new(&name_string, *num_params, ty_term, &rules, non_dependent);
                 inductives.insert(name_string.clone(), ind);
-                Ok(term::axiom(name_string))
+                Ok(term::ind(name_string))
             }
         }
     }

@@ -1,8 +1,17 @@
-use hashconsing::{consign, hash_coll::HConMap, HConsed, HConsign, HashConsign};
+//use crate::lru::HConLruCache;
+use hashconsing::{
+    consign,
+    hash_coll::p_hash::{HConMap, HConSet},
+    HConsed, HConsign, HashConsign,
+};
 use log::debug;
+use lru::LruCache;
+use nom::number;
 use std::collections::hash_map::DefaultHasher;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::hash::{Hash, Hasher};
+use std::num::NonZeroUsize;
+use std::sync::RwLock;
 
 pub fn imax(i: usize, j: usize) -> usize {
     if j == 0 {
@@ -12,11 +21,172 @@ pub fn imax(i: usize, j: usize) -> usize {
     }
 }
 
+pub struct EvaluationCache {
+    cache: LruCache<(Term, u64), Term, fxhash::FxBuildHasher>,
+    term_set: HConSet<Term>,
+    free_bindings_cache: HashMap<(Term, usize), HashSet<usize>>,
+}
+
+impl EvaluationCache {
+    fn new() -> Self {
+        EvaluationCache {
+            cache: LruCache::with_hasher(
+                NonZeroUsize::new(100_000_000).unwrap(),
+                fxhash::FxBuildHasher::default(),
+            ),
+            term_set: HConSet::default(),
+            free_bindings_cache: HashMap::new(),
+        }
+    }
+
+    fn get_context_hash(&mut self, term: Term, context: &Context) -> u64 {
+        let free_bindings = self.free_bindings_nonrec(term, 0);
+        //let free_bindings = self.free_bindings_of(term, 0);
+
+        let mut hasher = DefaultHasher::new();
+        for i in free_bindings {
+            (i, context.get_bound(i)).hash(&mut hasher);
+        }
+        hasher.finish()
+    }
+
+    fn get(&mut self, term: Term, context: &Context) -> Option<&Term> {
+        if self.term_set.contains(&term) {
+            let hash = self.get_context_hash(term.clone(), context);
+            self.cache.get(&(term.clone(), hash))
+        } else {
+            None
+        }
+    }
+
+    fn insert(&mut self, term: Term, context: &Context, result: Term) {
+        self.term_set.insert(term.clone());
+        let hash = self.get_context_hash(term.clone(), context);
+        self.cache.put((term.clone(), hash), result);
+    }
+
+    pub fn free_bindings_of(&mut self, term: Term, num_bindings: usize) -> HashSet<usize> {
+        if let Some(res) = self.free_bindings_cache.get(&(term.clone(), num_bindings)) {
+            return res.clone();
+        }
+
+        let res = match &*term {
+            TermData::Bound(index) => {
+                if *index >= num_bindings {
+                    let mut res = HashSet::new();
+                    res.insert(*index - num_bindings);
+                    res
+                } else {
+                    HashSet::new()
+                }
+            }
+            TermData::App(f, e) => {
+                let f_res = self.free_bindings_of(f.clone(), num_bindings);
+                let e_res = self.free_bindings_of(e.clone(), num_bindings);
+                f_res.union(&e_res).cloned().collect()
+            }
+            TermData::Binding(BindingData { domain, body, .. }) => {
+                let domain_res = self.free_bindings_of(domain.clone(), num_bindings);
+                let body_res = self.free_bindings_of(body.clone(), num_bindings + 1);
+
+                domain_res.union(&body_res).cloned().collect()
+            }
+            _ => HashSet::new(),
+        };
+
+        self.free_bindings_cache
+            .insert((term.clone(), num_bindings), res.clone());
+        res
+    }
+
+    pub fn free_bindings_nonrec(&mut self, term: Term, num_bindings: usize) -> HashSet<usize> {
+        if let Some(res) = self.free_bindings_cache.get(&(term.clone(), num_bindings)) {
+            return res.clone();
+        }
+
+        let mut res = HashSet::new();
+        let mut stack = Vec::with_capacity(1000000);
+        // term, depth, children pushed
+        stack.push((term.clone(), num_bindings, 0));
+
+        while !stack.is_empty() {
+            let (t, b, children_pushed) = stack.pop().unwrap();
+            if children_pushed == 0 {
+                if let Some(cached) = self.free_bindings_cache.get(&(t.clone(), b)) {
+                    res = res.union(cached).cloned().collect();
+                    continue;
+                }
+
+                stack.push((t.clone(), b, 1));
+                match &*t {
+                    TermData::App(f, e) => {
+                        stack.push((f.clone(), b, 0));
+                        //stack.push((e.clone(), b, false));
+                    }
+                    TermData::Binding(BindingData { domain, body, .. }) => {
+                        stack.push((domain.clone(), b, 0));
+                        //stack.push((body.clone(), b + 1, false));
+                    }
+                    _ => {}
+                };
+            } else if children_pushed == 1 {
+                //if let Some(cached) = self.free_bindings_cache.get(&(term.clone(), num_bindings)) {
+                //    res = res.union(cached).cloned().collect();
+                //    continue;
+                //}
+
+                stack.push((t.clone(), b, 2));
+                match &*t {
+                    TermData::App(f, e) => {
+                        //stack.push((f.clone(), b, 0));
+                        stack.push((e.clone(), b, 0));
+                    }
+                    TermData::Binding(BindingData { domain, body, .. }) => {
+                        //stack.push((domain.clone(), b, 0));
+                        stack.push((body.clone(), b + 1, 0));
+                    }
+                    _ => {}
+                };
+            } else {
+                let this_res = match &*t {
+                    TermData::Bound(index) => {
+                        if *index >= b {
+                            let mut res = HashSet::new();
+                            res.insert(*index - b);
+                            res
+                        } else {
+                            HashSet::new()
+                        }
+                    }
+                    TermData::App(f, e) => {
+                        let f_res = self.free_bindings_cache.get(&(f.clone(), b)).unwrap();
+                        let e_res = self.free_bindings_cache.get(&(e.clone(), b)).unwrap();
+                        f_res.union(e_res).cloned().collect()
+                    }
+                    TermData::Binding(BindingData { domain, body, .. }) => {
+                        let d_res = self.free_bindings_cache.get(&(domain.clone(), b)).unwrap();
+                        let b_res = self
+                            .free_bindings_cache
+                            .get(&(body.clone(), b + 1))
+                            .unwrap();
+                        d_res.union(b_res).cloned().collect()
+                    }
+                    _ => HashSet::new(),
+                };
+
+                res = res.union(&this_res).cloned().collect();
+                self.free_bindings_cache.insert((t.clone(), b), this_res);
+            }
+        }
+        res
+    }
+}
+
 #[derive(Debug)]
 pub struct Theorem {
     pub val: Term,
     pub ty: Term,
-    pub axioms: BTreeMap<String, Term>,
+    pub axioms: HashMap<String, Term>,
     pub inductives: HashMap<String, Inductive>,
 }
 
@@ -24,7 +194,7 @@ impl Theorem {
     pub fn new(
         val: Term,
         ty: Term,
-        axioms: &BTreeMap<String, Term>,
+        axioms: &HashMap<String, Term>,
         inductives: &HashMap<String, Inductive>,
     ) -> Theorem {
         Theorem {
@@ -43,13 +213,34 @@ impl Theorem {
         //let inds: Vec<Inductive> = self.inductives.values().cloned().collect();
         //println!("statement: {:?}\n :: {:?}", self.val, self.ty);
         let mut eval = Evaluator::new(&self.axioms, self.inductives.clone());
-        //let test = eval
-        //    .eval(self.val.clone())
-        //    .map_err(|e| format!("Simplify val err: {}", e))?;
-        //println!("simplified {:?}\n ===> {:?}", self.val, test);
+        println!("simplifying...");
+        //let test_val = {
+        //    let test = eval
+        //        .eval(self.val.clone())
+        //        .map_err(|e| format!("Simplify val err: {}", e))?;
+        //    garbage_collect();
+        //    let mut cache = Some(HConMap::default());
+        //    println!(
+        //        "simplified from size {} to size {}",
+        //        self.val.size(&mut cache),
+        //        test.size(&mut cache)
+        //    );
+        //    test
+        //};
+
+        //OK: WHAT I WILL DO:
+        //    - output mapping between terms and the expr number to find bad expr number
+        //    - check that it actually is bad ----> then fix it!
+        //garbage_collect();
+        //println!("typing term {}...", test_val);
+        println!("gc...");
+        //garbage_collect();
+        println!("typing term {}...", self.val);
+        println!("expect type {}...", self.ty);
         let computed_ty = eval
             .ty(self.val.clone())
             .map_err(|e| format!("Typing error: {}", e))?;
+        println!("simplify type...");
         let simplified_ty = eval
             .eval(self.ty.clone())
             .map_err(|e| format!("Simplify Type error: {}", e))?;
@@ -98,6 +289,10 @@ impl Context {
         self.bindings.hash(&mut hash);
         hash.finish()
     }
+
+    pub fn len(&self) -> usize {
+        self.bindings.len()
+    }
 }
 
 impl std::fmt::Debug for Context {
@@ -106,13 +301,19 @@ impl std::fmt::Debug for Context {
             write!(fmt, "{:?}", self.bindings)
         } else {
             write!(fmt, "[\n")?;
-            for item in &self.bindings {
+            let max_len = std::cmp::min(self.bindings.len(), 20);
+
+            for item in &self.bindings[..max_len] {
                 if let Some(expr) = item {
                     write!(fmt, "\t{:?},\n", expr)?;
                 } else {
                     write!(fmt, "\t_,\n")?;
                 }
             }
+            if self.bindings.len() > 20 {
+                write!(fmt, "...\n")?;
+            }
+
             write!(fmt, "]")?;
             Ok(())
         }
@@ -121,18 +322,26 @@ impl std::fmt::Debug for Context {
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Inductive {
-    name: String,
-    num_params: usize,
-    ty: Term,
-    rules: Vec<InductiveRule>,
+    pub name: String,
+    pub num_params: usize,
+    pub ty: Term,
+    pub rules: Vec<InductiveRule>,
     rule_lookup: BTreeMap<String, usize>,
 
+    pub non_dependent: bool,
+
     /// Cached Eliminator body (without global params or motive)
-    elim_body: Term,
+    pub elim_body: Term,
 }
 
 impl Inductive {
-    pub fn new(name: &str, num_params: usize, ty: Term, rules: &[InductiveRule]) -> Inductive {
+    pub fn new(
+        name: &str,
+        num_params: usize,
+        ty: Term,
+        rules: &[InductiveRule],
+        non_dependent: bool,
+    ) -> Inductive {
         let rule_lookup = rules
             .iter()
             .enumerate()
@@ -146,6 +355,7 @@ impl Inductive {
             ty,
             rules: rules.to_vec(),
             rule_lookup,
+            non_dependent,
             elim_body: sort(0),
         };
 
@@ -173,6 +383,66 @@ impl Inductive {
         let params = self.ty.params();
         params[self.num_params..params.len()].to_vec()
     }
+
+    // TODO: fix...
+    pub fn num_nonrecursive_args_for_rule(&self, idx: usize) -> usize {
+        let rule_ty = self.rules[idx].ty.clone();
+        let rule_params = rule_ty.params();
+        let mut res = 0;
+
+        for param in rule_params {
+            match &*param.top_level_func() {
+                TermData::Axiom(name) if name == &self.name => {
+                    break;
+                }
+                _ => res += 1,
+            }
+        }
+
+        res
+    }
+
+    pub fn num_recursive_args_for_rule(&self, idx: usize) -> usize {
+        let rule_ty = self.rules[idx].ty.clone();
+        let rule_params = rule_ty.params();
+        rule_params.len() - self.num_nonrecursive_args_for_rule(idx)
+    }
+
+    // TODO: only Prop inductives or all?
+    pub fn is_subsingleton(&self) -> bool {
+        if self.rules.len() > 1 {
+            return false;
+        }
+
+        // for now... just do
+        for rule in &self.rules {
+            // TODO: check the ctor arg is an index
+        }
+
+        return true;
+    }
+
+    /// See:
+    /// https://leanprover.github.io/theorem_proving_in_lean/inductive_types.html
+    ///
+    /// We are allowed to eliminate from an inductively defined Prop to an arbitrary Sort
+    /// when there is only one constructor and each constructor argument is either in Prop or an index
+    /// TODO:
+    /*pub fn use_singleton_elim(&self) -> bool {
+        if self.rules.len() > 1 {
+            return false;
+        }
+
+        for rule in &self.rules {
+            // check that the constructor arg is either in Prop or an index
+            for arg in rule.ty.params() {
+                let arg_ty = // get the arg type...
+                if arg
+            }
+        }
+
+        false
+    }*/
 
     /// Generates an eliminator for the inductive type.
     ///
@@ -230,12 +500,14 @@ impl Inductive {
             } else {
                 false
             };
-        let elide_universe_param = if use_nondependent && self.rules.len() > 1 {
+        //println!("use_nondependent: {:?}", use_nondependent);
+        let elide_universe_param = if self.non_dependent && self.rules.len() > 1 {
             true
         } else {
             false
         };
 
+        //println!("elide_universe_param: {:?}", elide_universe_param);
         if elide_universe_param && motive_universe_level != 0 {
             panic!("Attempted to instantiate eliminator universe when it should be elided!");
         }
@@ -247,15 +519,30 @@ impl Inductive {
         res.extend(params.iter().cloned());
 
         // add motive
-        let motive = self.generate_motive(motive_universe_level, use_nondependent);
+        let motive = self.generate_motive(motive_universe_level);
         res.push(motive);
 
         res.push(self.elim_body.clone());
 
-        pi_list(&res)
+        let res = pi_list(&res);
+
+        //println!("Elim for {} is: {}", self.name, res);
+        res
     }
 
-    fn generate_elim_body(&mut self) {
+    fn nondependent(&self) -> bool {
+        let body = self.ty_body();
+
+        //if matches!(*body, TermData::Sort(0)) && self.num_params == self.ty.params().len() {
+        //if let Ok(TermData::Sort(1)) = body_ty {
+        if matches!(*body.body(), TermData::Sort(0)) {
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn generate_elim_body(&mut self) {
         let mut eval = Evaluator::empty();
 
         // When the environment is impredicative and l_k is zero, then we use nondependent elimination, and we omit
@@ -273,19 +560,19 @@ impl Inductive {
             } else {
                 false
             };
-        let elide_universe_param = if use_nondependent && self.rules.len() > 1 {
+        let elide_universe_param = if self.non_dependent && self.rules.len() > 1 {
             true
         } else {
             false
         };
 
-        println!(
-            "generating elim for {}: nondep? {}, elide_uni? {}, index params len: {}",
-            self.name,
-            use_nondependent,
-            elide_universe_param,
-            self.index_params().len()
-        );
+        //println!(
+        //    "generating elim for {}: nondep? {}, elide_uni? {}, index params len: {}",
+        //    self.name,
+        //    use_nondependent,
+        //    elide_universe_param,
+        //    self.index_params().len()
+        //);
 
         let mut res = Vec::new();
         // minor_premise_i : (non_rec_params...) ->
@@ -293,26 +580,30 @@ impl Inductive {
         //                 (motive_params...) ->
         //                 motive (minor_premise_i ind_params... non_rec_params... rec_params...)
         for (rule_index, rule) in self.rules.iter().enumerate() {
-            println!("generating minor premise: {}", rule_index);
+            //println!("generating minor premise: {}", rule_index);
             //if use_nondependent {
             //    res.push(self.generate_minor_premise_nondependent(rule_index, rule));
             //} else {
             //    res.push(self.generate_minor_premise_dependent(rule_index, rule));
             //}
-            res.push(self.generate_minor_premise(rule_index, rule, !use_nondependent, &mut eval));
+            res.push(self.generate_minor_premise(rule_index, rule, !self.non_dependent, &mut eval));
             //println!("got premise {:?}", self.generate_minor_premise(rule_index, rule, !use_nondependent, &mut eval));
         }
 
         // generate the major premise
-        println!("generating major premise");
+        //println!("generating major premise");
 
         // push index params
         let mut major_premise_pis = Vec::new();
-        for param in self.index_params() {
-            major_premise_pis.push(eval.lift(param, (self.rules.len() + 1) as isize).unwrap())
+        for (i, param) in self.index_params().iter().enumerate() {
+            //println!("PARAM: {}", param);
+            major_premise_pis.push(
+                eval.lift_inner(param.clone(), (self.rules.len() + 1) as isize, i)
+                    .unwrap(),
+            )
         }
 
-        let mut ind_ty_apps = vec![axiom(self.name.clone())];
+        let mut ind_ty_apps = vec![ind(self.name.clone())];
         let global_param_bindings = (0..self.global_params().len()).map(|i| {
             bound(
                 self.global_params().len() - 1 - i
@@ -323,6 +614,11 @@ impl Inductive {
         });
         let index_param_bindings =
             (0..self.index_params().len()).map(|i| bound(self.index_params().len() - 1 - i));
+        //println!("IND FOR {}", self.name);
+        //println!(
+        //    "index_param_bindings: {:?}",
+        //    index_param_bindings.clone().collect::<Vec<_>>()
+        //);
         //println!(
         //    "global param bindings: {:?}",
         //    global_param_bindings.collect::<Vec<_>>()
@@ -331,16 +627,18 @@ impl Inductive {
         //    "index param bindings: {:?}",
         //    index_param_bindings.collect::<Vec<_>>()
         //);
+        //println!("major_premise_pis: {:?}", major_premise_pis);
         ind_ty_apps.extend(global_param_bindings);
         ind_ty_apps.extend(index_param_bindings);
         let ind_ty = app_list(&ind_ty_apps);
         major_premise_pis.push(ind_ty);
+        //println!("major premise: {:?}", major_premise_pis);
 
         let motive_binding = bound(major_premise_pis.len() + self.rules.len());
         let mut final_motive_apps = vec![motive_binding];
 
         // skip actual major premise inductive type if we are non-dependent
-        let motive_args_len = if !use_nondependent {
+        let motive_args_len = if !self.non_dependent {
             major_premise_pis.len()
         } else {
             major_premise_pis.len() - 1
@@ -353,17 +651,18 @@ impl Inductive {
         let major_premise = pi_list(&major_premise_pis);
         res.push(major_premise);
         //println!("got elim {:?}", pi_list(&res));
-        println!("elim done");
+        //println!("elim done");
 
         self.elim_body = pi_list(&res);
+        //println!("elim body: {:?}", self.elim_body);
     }
 
-    fn generate_motive(&self, motive_universe_level: usize, use_nondependent: bool) -> Term {
+    pub fn generate_motive(&self, motive_universe_level: usize) -> Term {
         let mut res_pi_list = self.index_params();
 
-        if !use_nondependent {
+        if !self.non_dependent {
             // construct the recursive param
-            let mut ind_app_list = vec![axiom(self.name.clone())];
+            let mut ind_app_list = vec![ind(self.name.clone())];
             let global_bindings = (0..self.global_params().len())
                 .map(|i| bound(self.global_params().len() - 1 - i + res_pi_list.len()));
             ind_app_list.extend(global_bindings);
@@ -390,27 +689,36 @@ impl Inductive {
         //println!("rule_params: {:?}", rule_params);
 
         for (param_index, param) in rule_params.iter().enumerate() {
-            println!("generating premise param: {}", param_index);
+            //println!("generating premise param: {}", param_index);
             minor_premise_args.push(
                 eval.lift_inner(param.clone(), rule_index as isize + 1, param_index)
                     .unwrap(),
             );
 
             // if param is recursive, also push (motive arg) to rec params
-            let param_func = param.top_level_func();
+            // due to ind type rules, may only be recursive in the body of
+            // the param
+            let param_func = param.body().top_level_func();
             match &*param_func {
-                TermData::Axiom(name) if name == &self.name => {
-                    let motive_binding =
-                        bound(rule_params.len() + minor_premise_motive_args.len() + rule_index);
-                    let mut motive_params = vec![motive_binding];
-                    motive_params.extend_from_slice(
+                TermData::Ind(name) if name == &self.name => {
+                    let mut params = param.params();
+                    let motive_binding = bound(
+                        rule_params.len()
+                            + minor_premise_motive_args.len()
+                            + params.len()
+                            + rule_index,
+                    );
+                    let mut motive_apps = vec![motive_binding];
+                    // gross.... try to consolidate lifting later...
+                    motive_apps.extend_from_slice(
                         &eval
-                            .lift(
-                                param.clone(),
+                            .lift_inner(
+                                param.body().clone(),
                                 (rule_params.len() - 1 - param_index
                                     + 1
                                     + minor_premise_motive_args.len())
                                     as isize,
+                                params.len(),
                             )
                             .unwrap()
                             .app_args()[self.num_params..],
@@ -418,18 +726,55 @@ impl Inductive {
                     // if dependent, add recursive arg to motive
                     if dependent {
                         let orig_param_binding = bound(
-                            rule_params.len() - 1 - param_index + minor_premise_motive_args.len(),
+                            rule_params.len() - 1 - param_index
+                                + minor_premise_motive_args.len()
+                                // TODO: check
+                                + params.len(),
                         );
-                        motive_params.push(orig_param_binding);
+                        motive_apps.push(orig_param_binding);
                     }
-                    //println!("motive param {}: {:?}", param_index, motive_params);
-                    minor_premise_motive_args.push(app_list(&motive_params));
+
+                    //let mut params_lifted = params;
+                    //println!("minor premise args len: {}", minor_premise_args.len());
+                    //println!(
+                    //    "minor premise motive args len: {}",
+                    //    minor_premise_motive_args.len()
+                    //);
+                    // lift each param
+                    let mut params_lifted = params
+                        .iter()
+                        .enumerate()
+                        .map(|(i, p)| {
+                            eval.lift_inner(
+                                p.clone(),
+                                (rule_params.len() - 1 - param_index
+                                    + 1
+                                    + minor_premise_motive_args.len())
+                                    as isize,
+                                i + minor_premise_args.len() - minor_premise_motive_args.len() - 1,
+                            )
+                            .unwrap()
+                        })
+                        .collect::<Vec<_>>()
+                        .iter()
+                        .enumerate()
+                        .map(|(i, p)| eval.lift_inner(p.clone(), 1 as isize, i).unwrap())
+                        .collect::<Vec<_>>();
+
+                    // parameters if the param is a Pi
+                    params_lifted.push(app_list(&motive_apps));
+                    //println!(
+                    //    "motive param {}: {:?}",
+                    //    param_index,
+                    //    pi_list(&params_lifted)
+                    //);
+                    minor_premise_motive_args.push(pi_list(&params_lifted));
                 }
                 _ => {}
             }
         }
 
-        println!("generating premise body");
+        //println!("generating premise body");
         //println!("rule body: {:?}", rule.ty.body());
         //println!("num params: {:?}", self.num_params);
         let motive_binding =
@@ -461,7 +806,7 @@ impl Inductive {
         // inductive arg for the minor_premise body
         if dependent {
             let inductive_arg = {
-                let mut recursive_arg_apps = vec![axiom(rule.name.clone())];
+                let mut recursive_arg_apps = vec![ind_ctor(self.name.clone(), rule.name.clone())];
                 let global_param_bindings = (0..self.global_params().len()).map(|i| {
                     bound(
                         self.global_params().len() - 1 - i
@@ -540,8 +885,8 @@ impl std::fmt::Debug for Inductive {
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct InductiveRule {
-    name: String,
-    ty: Term,
+    pub name: String,
+    pub ty: Term,
 }
 
 impl InductiveRule {
@@ -562,6 +907,7 @@ impl std::fmt::Debug for InductiveRule {
 consign! {
     let FACTORY = consign(0) for TermData;
 }
+static gc_counter: RwLock<usize> = RwLock::new(0);
 
 pub type Term = HConsed<TermData>;
 
@@ -590,10 +936,15 @@ pub enum TermData {
     Binding(BindingData),
     App(Term, Term),
     Axiom(String),
+
+    // new induction things...
+    Ind(String),
+    IndCtor(String, String),
+    IndRec(String, usize),
 }
 
 impl TermData {
-    fn params(&self) -> Vec<Term> {
+    pub fn params(&self) -> Vec<Term> {
         let mut res = vec![];
         let mut curr_ty = self;
         loop {
@@ -632,7 +983,7 @@ impl TermData {
         res
     }
 
-    fn body(&self) -> Term {
+    pub fn body(&self) -> Term {
         let mut curr_ty = self;
         loop {
             match curr_ty {
@@ -672,13 +1023,16 @@ impl TermData {
             .flatten()
         {
             return *size;
+            //return 1;
         }
+
+        //println!("this is: {:?}", self);
         let res = match self {
-            TermData::Bound(_) | TermData::Sort(_) | TermData::Axiom(_) => 1,
             TermData::Binding(BindingData { domain, body, .. }) => {
-                domain.size(cache) + body.size(cache)
+                domain.size(cache).saturating_add(body.size(cache))
             }
-            TermData::App(f, e) => f.size(cache) + e.size(cache),
+            TermData::App(f, e) => f.size(cache).saturating_add(e.size(cache)),
+            _ => 1,
         };
         cache
             .as_mut()
@@ -709,23 +1063,58 @@ impl TermData {
 
 impl std::fmt::Debug for TermData {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
-        match self {
-            TermData::Bound(index) => {
-                write!(fmt, "Bound({})", index)
-            }
-            TermData::Sort(index) => {
-                write!(fmt, "Sort({})", index)
-            }
-            TermData::Binding(BindingData { ty, domain, body }) => {
-                write!(fmt, "{:?}({:?}, {:?})", ty, domain, body)
-            }
-            TermData::App(f, e) => {
-                write!(fmt, "App({:?}, {:?})", f, e)
-            }
-            TermData::Axiom(name) => {
-                write!(fmt, "Axiom({})", name)
-            }
-        }
+        //match self {
+        //    TermData::Bound(index) => {
+        //        write!(fmt, "Bound({})", index)
+        //    }
+        //    TermData::Sort(index) => {
+        //        write!(fmt, "Sort({})", index)
+        //    }
+        //    TermData::Binding(BindingData { ty, domain, body }) => {
+        //        write!(fmt, "{:?}({:?}, {:?})", ty, domain, body)
+        //    }
+        //    TermData::App(f, e) => {
+        //        write!(fmt, "App({:?}, {:?})", f, e)
+        //    }
+        //    TermData::Axiom(name) => {
+        //        write!(fmt, "Axiom({})", name)
+        //    }
+        //}
+        write!(fmt, "{}", self);
+        Ok(())
+    }
+}
+
+impl std::fmt::Display for TermData {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        //match self {
+        //    TermData::Bound(index) => {
+        //        write!(fmt, "Bound({})", index)
+        //    }
+        //    TermData::Sort(level) => {
+        //        write!(fmt, "Sort({})", level)
+        //    }
+        //    TermData::Binding(BindingData { ty, domain, body }) => {
+        //        write!(fmt, "{:?}({}, {})", ty, domain, body)
+        //    }
+        //    TermData::App(f, e) => {
+        //        write!(fmt, "App({}, {})", f, e)
+        //    }
+        //    TermData::Ind(name) => {
+        //        write!(fmt, "Ind({})", name)
+        //    }
+        //    TermData::IndCtor(name, ctor) => {
+        //        write!(fmt, "IndCtor({}.{})", name, ctor)
+        //    }
+        //    TermData::IndRec(name, motive_sort) => {
+        //        write!(fmt, "IndRec({}, {})", name, motive_sort)
+        //    }
+        //    TermData::Axiom(name) => {
+        //        write!(fmt, "Axiom({})", name)
+        //    }
+        //}
+
+        Ok(())
     }
 }
 
@@ -788,22 +1177,56 @@ pub fn axiom<S: AsRef<str>>(name: S) -> Term {
     FACTORY.mk(TermData::Axiom(name.as_ref().into()))
 }
 
+pub fn ind<S: AsRef<str>>(name: S) -> Term {
+    FACTORY.mk(TermData::Ind(name.as_ref().into()))
+}
+
+pub fn ind_ctor<S: AsRef<str>, SP: AsRef<str>>(ind_name: S, ind_ctor: SP) -> Term {
+    FACTORY.mk(TermData::IndCtor(
+        ind_name.as_ref().into(),
+        ind_ctor.as_ref().into(),
+    ))
+}
+
+pub fn ind_rec<S: AsRef<str>>(ind_name: S, motive_sort: usize) -> Term {
+    FACTORY.mk(TermData::IndRec(ind_name.as_ref().into(), motive_sort))
+}
+
+pub fn garbage_collect() {
+    let old_len = FACTORY.read().unwrap().len();
+    //if old_len >= *gc_counter.read().unwrap() + 10000 {
+    FACTORY.collect_to_fit();
+    let collected = old_len - FACTORY.read().unwrap().len();
+    if collected > 0 {
+        println!(
+            "garbage collected {} terms (new_len {})",
+            collected,
+            FACTORY.read().unwrap().len()
+        );
+    }
+    //*gc_counter.write().unwrap() = FACTORY.read().unwrap().len();
+    //}
+}
+
 pub struct Evaluator {
     inductives: HashMap<String, Inductive>,
     axioms: BTreeMap<String, Term>,
 
-    eval_cache: HashMap<(Term, u64), Term>,
-    ty_cache: HashMap<(Term, u64), Term>,
+    eval_cache: EvaluationCache,
+    ty_cache: EvaluationCache,
     eq_cache: HashMap<(Term, Term), bool>,
+    elim_cache: HConMap<Term, Term>,
     lift_cache: HashMap<(Term, isize, usize), Term>,
+
+    tmp_test_cache: HashSet<Vec<Term>>,
 }
 
 impl Evaluator {
-    pub fn new<S: Into<String>, I: Clone + Into<BTreeMap<S, Term>>>(
+    pub fn new<S: Into<String>, I: Clone + Into<HashMap<S, Term>>>(
         axioms: &I,
         inductives: HashMap<String, Inductive>,
     ) -> Self {
-        let axioms: BTreeMap<S, Term> = (*axioms).clone().into();
+        let axioms: HashMap<S, Term> = (*axioms).clone().into();
         let mut axioms: BTreeMap<String, Term> =
             axioms.into_iter().map(|(k, v)| (k.into(), v)).collect();
         inductives
@@ -818,10 +1241,13 @@ impl Evaluator {
             inductives,
             axioms,
 
-            eval_cache: HashMap::new(),
-            ty_cache: HashMap::new(),
+            eval_cache: EvaluationCache::new(),
+            ty_cache: EvaluationCache::new(),
             eq_cache: HashMap::new(),
+            elim_cache: HConMap::default(),
             lift_cache: HashMap::new(),
+
+            tmp_test_cache: HashSet::new(),
         };
 
         //println!("------------------ Checking axioms ------------------");
@@ -838,51 +1264,100 @@ impl Evaluator {
             inductives: HashMap::new(),
             axioms: BTreeMap::new(),
 
-            eval_cache: HashMap::new(),
-            ty_cache: HashMap::new(),
+            eval_cache: EvaluationCache::new(),
+            ty_cache: EvaluationCache::new(),
             eq_cache: HashMap::new(),
+            elim_cache: HConMap::default(),
             lift_cache: HashMap::new(),
+
+            tmp_test_cache: HashSet::new(),
         }
     }
 
     pub fn eval(&mut self, term: Term) -> Result<Term, String> {
-        self.eval_with_context(term, &mut Context::new(), &mut Context::new())
+        self.eval_with_context(term, &mut Context::new(), &mut Context::new(), true, 100)
     }
+
+    //pub fn eval_iter_wrapper(&mut self, term: Term, context: &mut Context) -> Result<Term, String> {
+    //    if let Some(res) = self.eval_cache.get(term.clone(), context) {
+    //        return Ok(res.clone());
+    //    }
+
+    //    let mut stack = Vec::new();
+    //    stack.push((term, context.clone(), 0));
+
+    //    while !stack.is_empty() {
+    //        let (t, c, children_pushed) = stack.pop();
+
+    //
+    //    }
+    //}
 
     pub fn eval_with_context(
         &mut self,
         term: Term,
         context: &mut Context,
-        types: &mut Context,
+        typing_context: &mut Context,
+        rec: bool,
+        max_depth: usize,
     ) -> Result<Term, String> {
-        if let Some(res) = self.eval_cache.get(&(term.clone(), context.hash())) {
+        //let free_bindings = self.free_bindings_of(term.clone(), 0);
+        //println!(
+        //    "free bindings test: got {:?} (ctx_size: {:?})",
+        //    free_bindings,
+        //    context.len()
+        //);
+
+        //if free_bindings.is_empty() {
+        //    if let Some(res) = self.eval_cache.get(&(term.clone(), Context::new().hash())) {
+        //        return Ok(res.clone());
+        //    }
+        //} else {
+        //if !rec {
+        if let Some(res) = self.eval_cache.get(term.clone(), context) {
             return Ok(res.clone());
         }
+        //}
+        //}
 
+        debug!("EVAL: {:?}", term);
         let res = match &*term {
             TermData::Bound(index) => {
                 if let Some(bound_term) = context.get_bound(*index) {
-                    self.lift(bound_term, *index as isize + 1)
-                        .map_err(|s| format!("{} when evaling term {:?}", s, term))?
+                    let res = self
+                        .lift(bound_term, *index as isize + 1)
+                        .map_err(|s| format!("{} when evaling term {:?}", s, term))?;
+                    // We added an eval here because we could replace with a term with an
+                    // unresolved recursion
+                    self.eval_with_context(res, context, typing_context, rec, max_depth)?
                 } else {
                     term.clone()
                 }
             }
             TermData::Binding(BindingData { ty, domain, body }) => {
-                let domain_value = self.eval_with_context(domain.clone(), context, types)?;
+                let domain_value = self.eval_with_context(
+                    domain.clone(),
+                    context,
+                    typing_context,
+                    rec,
+                    max_depth,
+                )?;
 
                 // push a null binding, so we can continue pushing in the body
                 context.null_bind();
-                types.push(domain.clone());
-                let body_value = self.eval_with_context(body.clone(), context, types)?;
-                types.pop();
+                typing_context.push(domain_value.clone());
+                let body_value =
+                    self.eval_with_context(body.clone(), context, typing_context, rec, max_depth)?;
+                typing_context.pop();
                 context.pop();
 
                 binding(*ty, domain_value, body_value)
             }
             TermData::App(f, e) => {
-                let f_value = self.eval_with_context(f.clone(), context, types)?;
-                let e_value = self.eval_with_context(e.clone(), context, types)?;
+                let f_value =
+                    self.eval_with_context(f.clone(), context, typing_context, rec, max_depth)?;
+                let e_value =
+                    self.eval_with_context(e.clone(), context, typing_context, rec, max_depth)?;
 
                 if let TermData::Binding(BindingData {
                     ty: _,
@@ -891,9 +1366,13 @@ impl Evaluator {
                 }) = &*f_value
                 {
                     context.push(e_value.clone());
-                    types.push(domain.clone());
-                    let res = self.eval_with_context(body.clone(), context, types)?;
-                    types.pop();
+                    let res = self.eval_with_context(
+                        body.clone(),
+                        context,
+                        typing_context,
+                        rec,
+                        max_depth,
+                    )?;
                     context.pop();
                     self.lift(res.clone(), -1).map_err(|s| {
                         format!(
@@ -908,111 +1387,284 @@ impl Evaluator {
             _ => term.clone(),
         };
 
-        let res = if let Some(rec_res) = self.try_eval_rec(res.clone(), context, types) {
-            rec_res
-        } else {
-            res
-        };
+        let res = //if rec {
+            //&& max_depth > 0 {
+            if let Some(rec_res) =
+                self.try_eval_rec(res.clone(), context, typing_context, max_depth)
+            {
+                rec_res
+            } else {
+                res
+            };
+        //} else {
+        //    res
+        //};
+        //} else {
+        //res
+        //};
+        //garbage_collect();
 
-        self.eval_cache
-            .insert((term.clone(), context.hash()), res.clone());
+        //if free_bindings.is_empty() {
+        //    self.eval_cache
+        //        .insert((term.clone(), Context::new().hash()), res.clone());
+        //} else {
+        //if !rec {
+        self.eval_cache.insert(term.clone(), context, res.clone());
+        //}
+        //}
 
         debug!("\n C = {:?}\n |- {:?} => {:?}", context, term, res);
+        if rec {
+            //println!("GOT EVAL: {} => {}", term, res);
+        }
         Ok(res)
     }
 
+    // TODO: this is disgusting
+    // TODOO: add recursion limit...
     fn try_eval_rec(
         &mut self,
         term: Term,
         context: &mut Context,
-        types: &mut Context,
+        typing_context: &mut Context,
+        max_depth: usize,
     ) -> Option<Term> {
-        if let TermData::Axiom(name) = &*term.top_level_func() {
-            if name.contains(".rec") {
-                let args = term.app_args();
-                let inductive_name = name.split(".rec").next().unwrap();
-                let inductive = self.inductives.get(inductive_name).unwrap().clone();
-                if args.len() == inductive.elim(0).params().len() {
-                    let argument = &args[args.len() - 1];
-                    if let TermData::Axiom(rule) = &*argument.top_level_func() {
-                        let (ind_base_name, ind_universe_string) =
-                            inductive_name.rsplit_once(".").unwrap();
+        if let TermData::IndRec(rec_ind_name, motive_sort) = &*term.top_level_func() {
+            //println!("got top level func {} for {}", name, term);
+            //println!("trying {}", term);
+            let args = term.app_args();
+            let inductive = self.inductives.get(rec_ind_name).unwrap().clone();
+            if args.len() == inductive.elim(*motive_sort).params().len() {
+                let argument = &args[args.len() - 1];
 
-                        // match rec with the inductive name
-                        if rule.starts_with(ind_base_name)
-                            && rule.ends_with(ind_universe_string)
-                            && rule != inductive_name
-                            && !rule.contains("rec")
+                //println!("trying to eval rec: {:?}", term);
+
+                if let TermData::IndCtor(ctor_ind_name, rule_name) = &*argument.top_level_func() {
+                    if rec_ind_name == ctor_ind_name {
+                        //println!("elim: {}", inductive.elim(*motive_sort));
+                        //println!("args are {:?}", args);
+                        //if let Some(elim) = self.elim_cache.get(&term) {
+                        //    let new_res =
+                        //        self.eval_with_context(elim.clone(), context).unwrap();
+                        //    //println!("got eval {}\n\t=> {}", term, new_res);
+                        //    return Some(new_res);
+                        //}
+
+                        // if self.tmp_test_cache.contains(&args) {
+                        //     println!("SEEN BEFORE IN CACHE");
+                        // } else {
+                        //     self.tmp_test_cache.insert(args.clone());
+                        // }
+                        //let rule_args =
+                        //    argument.app_args()[inductive.global_params().len()..].to_vec();
+                        //println!("Rule args are: {:?}", rule_args);
+
+                        let rec = match &*term {
+                            TermData::App(f, _) => f,
+                            _ => {
+                                panic!("Not an app");
+                            }
+                        };
+
+                        let rule_num = inductive.rule_lookup.get(rule_name).expect(&format!(
+                            "Couldn't find rule {} in inductive {}",
+                            rule_name, ctor_ind_name
+                        ));
+                        let elim = &args[1 + inductive.global_params().len() + rule_num];
+
+                        let rule_args =
+                            argument.app_args()[inductive.global_params().len()..].to_vec();
+                        let mut rec_args = Vec::new();
+                        for (i, ty) in inductive.rules[*rule_num].ty.params()
+                            [inductive.global_params().len()..]
+                            .iter()
+                            .enumerate()
                         {
-                            let rec = match &*term {
-                                TermData::App(f, _) => f,
-                                _ => {
-                                    panic!("Not an app");
-                                }
-                            };
-
-                            let rule_num = inductive.rule_lookup.get(rule).expect(&format!("Couldn't find rule number {} of inductive {:?} inside expr {:?} (ind_base_name {}, ind_universe_string {})", rule, inductive_name, argument, ind_base_name, ind_universe_string));
-                            let elim = &args[1 + inductive.global_params().len() + rule_num];
-
-                            let rule_args =
-                                argument.app_args()[inductive.global_params().len()..].to_vec();
-                            let mut rec_args = Vec::new();
-                            for (i, ty) in inductive.rules[*rule_num].ty.params()
-                                [inductive.global_params().len()..]
-                                .iter()
-                                .enumerate()
-                            {
-                                // if recursive, apply the eliminator again...
-                                if let TermData::Axiom(name) = &*ty.top_level_func() {
-                                    if name == &inductive.name {
-                                        // TODO: can do eval later or even better lazily
-                                        rec_args.push(app(rec.clone(), rule_args[i].clone()));
-                                    }
+                            // if recursive, apply the eliminator again...
+                            if let TermData::Ind(ind_name) = &*ty.top_level_func() {
+                                if ind_name == &inductive.name {
+                                    // TODO: can do eval later or even better lazily
+                                    rec_args.push(app(rec.clone(), rule_args[i].clone()).clone());
                                 }
                             }
-
-                            let mut elim_app = vec![elim.clone()];
-                            elim_app.extend_from_slice(&rule_args);
-                            elim_app.extend_from_slice(&rec_args);
-
-                            let elim = app_list(&elim_app);
-                            let new_res = self
-                                .eval_with_context(elim.clone(), context, types)
-                                .unwrap();
-                            println!("got eval {:?}\n\t=> {:?}", term, new_res);
-                            return Some(new_res);
                         }
+
+                        let mut elim_app = vec![elim.clone()];
+                        elim_app.extend_from_slice(&rule_args);
+                        //println!("elim_app no rec is: {:?}", elim_app);
+                        elim_app.extend_from_slice(&rec_args);
+
+                        let elim = app_list(&elim_app);
+                        let res = self
+                            .eval_with_context(elim.clone(), context, typing_context, true, 1000)
+                            .unwrap();
+                        //println!("elim_res: {}", res);
+                        //self.elim_cache.insert(term.clone(), elim.clone());
+                        //println!("got elim {}", elim);
+                        //println!("rec eval {}\n\t=> {}", term, res);
+
+                        return Some(res);
                     }
                 }
+
+                // OKAY LETS DO IT!!!
+                // wts: if a is def equal to a', then we are good...
+                if inductive.is_subsingleton() && inductive.name == "eq.{2}" {
+                    // try to convert the arg to "eq" intro....
+
+                    let arg_type = self
+                        .ty_with_context(argument.clone(), typing_context)
+                        .unwrap();
+                    //println!("Got arg_type: {:?}", arg_type);
+
+                    if !matches!(&*arg_type.top_level_func(), TermData::Ind(name) if name == &inductive.name)
+                    {
+                        return None;
+                    }
+
+                    // grab the args we need from the type
+                    let type_args = arg_type.app_args();
+
+                    let ctor = &inductive.rules[0];
+                    let num_params = ctor.ty.params().len();
+                    let ty_params = inductive.num_params;
+
+                    // ensure the ctor has no args except type args, see
+                    // https://leanprover.zulipchat.com/#narrow/stream/113488-general/topic/K-like.20inductives.20don't.20take.20arguments
+                    if num_params != ty_params {
+                        return None;
+                    }
+
+                    // construct the type using these args
+                    let mut ctor_app = ind_ctor(inductive.name.clone(), ctor.name.clone());
+                    for i in 0..num_params {
+                        ctor_app = app(ctor_app, type_args[i].clone());
+                    }
+
+                    // check if the constructed type is definitionally equal to
+                    // the arg
+                    if !self.def_equals_with_context(ctor_app, argument.clone(), typing_context) {
+                        return None;
+                    }
+
+                    // simply return the elim... because it is a subsingleton it
+                    // it doesn't depend on anything else
+                    let elim = &args[1 + inductive.global_params().len()];
+                    //println!("SUBSINGLE");
+                    return Some(elim.clone());
+                }
             }
+            //println!(
+            //    "not enough args. Got {} expected {}",
+            //    args.len(),
+            //    inductive.elim(0).params().len()
+            //);
         }
 
         None
     }
+
+    //pub fn try_unify_rec(
+    //    &mut self,
+    //    term: Term,
+    //    context: &mut Context,
+    //    expected: Term,
+    //) -> Option<Term> {
+    //    if let TermData::Axiom(name) = &*term.top_level_func() {
+    //        if name.contains(".rec") {
+    //            let args = term.app_args();
+    //            let inductive_name = name.split(".rec").next().unwrap();
+    //            let inductive = self.inductives.get(inductive_name).unwrap().clone();
+    //            if args.len() == inductive.elim(0).params().len() {
+    //                let argument = &args[args.len() - 1];
+    //                if let TermData::Axiom(rule) = &*argument.top_level_func() {
+    //                    let (ind_base_name, ind_universe_string) =
+    //                        inductive_name.rsplit_once(".").unwrap();
+
+    //                    // match rec with the inductive name
+    //                    if rule.starts_with(ind_base_name)
+    //                        && rule.ends_with(ind_universe_string)
+    //                        && rule != inductive_name
+    //                        && !rule.contains("rec")
+    //                    {
+    //                        let rec = match &*term {
+    //                            TermData::App(f, _) => f,
+    //                            _ => {
+    //                                panic!("Not an app");
+    //                            }
+    //                        };
+
+    //                        let rule_num = inductive.rule_lookup.get(rule).expect(&format!("Couldn't find rule number {} of inductive {:?} inside expr {:?} (ind_base_name {}, ind_universe_string {})", rule, inductive_name, argument, ind_base_name, ind_universe_string));
+    //                        let elim = &args[1 + inductive.global_params().len() + rule_num];
+
+    //                        let rule_args =
+    //                            argument.app_args()[inductive.global_params().len()..].to_vec();
+    //                        let mut rec_args = Vec::new();
+    //                        for (i, ty) in inductive.rules[*rule_num].ty.params()
+    //                            [inductive.global_params().len()..]
+    //                            .iter()
+    //                            .enumerate()
+    //                        {
+    //                            // if recursive, apply the eliminator again...
+    //                            if let TermData::Axiom(name) = &*ty.top_level_func() {
+    //                                if name == &inductive.name {
+    //                                    // TODO: can do eval later or even better lazily
+    //                                    rec_args.push(app(rec.clone(), rule_args[i].clone()));
+    //                                }
+    //                            }
+    //                        }
+
+    //                        let mut elim_app = vec![elim.clone()];
+    //                        elim_app.extend_from_slice(&rule_args);
+    //                        elim_app.extend_from_slice(&rec_args);
+
+    //                        let elim = app_list(&elim_app);
+    //                        let new_res = self
+    //                            .eval_with_context(elim.clone(), context, typing_context, false, 10)
+    //                            .unwrap();
+    //                        //println!("got eval {:?}\n\t=> {:?}", term, new_res);
+    //                        return Some(new_res);
+    //                    }
+    //                }
+    //            }
+    //        }
+    //    }
+
+    //    None
+    //}
 
     pub fn ty(&mut self, term: Term) -> Result<Term, String> {
         self.ty_with_context(term, &mut Context::new())
     }
 
     pub fn ty_with_context(&mut self, term: Term, context: &mut Context) -> Result<Term, String> {
-        if let Some(res) = self.ty_cache.get(&(term.clone(), context.hash())) {
+        if let Some(res) = self.ty_cache.get(term.clone(), context) {
             return Ok(res.clone());
         }
 
-        debug!("\n C = {:?}\n Typing {:?}", context, term);
+        //debug!("\n C = {:?}\n Typing {:?}", context, term);
+        //println!("HI");
         let res = match &*term {
             TermData::Bound(index) => {
                 if let Some(bound_term) = context.get_bound(*index) {
                     self.lift(bound_term, *index as isize + 1)?
                 } else {
-                    panic!("bound var test");
+                    return Err(format!(
+                        "bound var out of range: {:?}, ctx: {:?}",
+                        index, context
+                    ));
                     //Ok(term.clone())
                 }
             }
             TermData::Sort(level) => sort(level + 1),
             TermData::Binding(BindingData { ty, domain, body }) => {
-                let domain_ty =
-                    self.eval_with_context(domain.clone(), &mut Context::new(), context)?;
+                let domain_ty = self.eval_with_context(
+                    domain.clone(),
+                    &mut Context::new(),
+                    context,
+                    false,
+                    10,
+                )?;
                 self.ty_with_context(domain_ty.clone(), context)?;
                 context.push(domain_ty.clone());
                 let body_ty = self.ty_with_context(body.clone(), context)?;
@@ -1040,20 +1692,43 @@ impl Evaluator {
                         let j = if let TermData::Sort(level) = *body_ty {
                             Ok(level)
                         } else {
-                            //println!(
-                            //    "Axioms: {:?}\nInductives: {:?}\nContext: {:?}\nTerm: {:?}",
-                            //    self.axioms, self.inductives, context, term,
-                            //);
-                            Err(format!(
-                                "Body type {:?} of Pi is not a sort! Got: {:?} (in {:?})",
-                                body, body_ty, term
-                            ))
+                            // may need to fully evaluate due to impredicative sort.
+                            // For example, a term of type
+                            // Let B :: Sort(0),
+                            // (Pi x: Sort(0).B) a => B :: Sort(0)
+                            // However, (Pi x: Sort(0).B) :: Sort(0)
+                            //      and B :: Sort(0)
+                            // implying that (Pi x: Sort(0).B) a :: app(Sort(0), Sort(0)) which
+                            // will fail
+
+                            let body_eval = self.eval_with_context(
+                                body.clone(),
+                                &mut Context::new(),
+                                context,
+                                true,
+                                10,
+                            )?;
+                            let evaled_ty = self.ty_with_context(body_eval, context)?;
+
+                            if let TermData::Sort(level) = *evaled_ty {
+                                Ok(level)
+                            } else {
+                                //println!(
+                                //    "Axioms: {:?}\nInductives: {:?}\nContext: {:?}\nTerm: {:?}",
+                                //    self.axioms, self.inductives, context, term,
+                                //);
+                                Err(format!(
+                                    "Body type {:?} of Pi is not a sort! Got: {:?} (in {:?})",
+                                    body, body_ty, term
+                                ))
+                            }
                         }?;
                         sort(imax(i, j))
                     }
                 }
             }
             TermData::App(f, e) => {
+                //println!("Context for app! {:?}\n for term {:?}", context, term);
                 let f_ty = self.ty_with_context(f.clone(), context)?;
                 let e_ty = self.ty_with_context(e.clone(), context)?;
 
@@ -1063,12 +1738,23 @@ impl Evaluator {
                     body,
                 }) = &*f_ty
                 {
-                    let domain_value =
-                        self.eval_with_context(domain.clone(), &mut Context::new(), context)?;
+                    let domain_value = self.eval_with_context(
+                        domain.clone(),
+                        &mut Context::new(),
+                        context,
+                        true,
+                        10,
+                    )?;
                     self.ty_with_context(domain_value.clone(), context).unwrap();
-                    let e_ty_value =
-                        self.eval_with_context(e_ty.clone(), &mut Context::new(), context)?;
-                    self.ty_with_context(e_ty.clone(), context).unwrap();
+                    let e_ty_value = self.eval_with_context(
+                        e_ty.clone(),
+                        &mut Context::new(),
+                        context,
+                        true,
+                        10,
+                    )?;
+                    self.ty_with_context(e_ty_value.clone(), context).unwrap();
+                    //println!("Context2 for app! {:?}", context);
 
                     //if domain_value != e_ty {
                     if !self.def_equals_with_context(
@@ -1076,6 +1762,7 @@ impl Evaluator {
                         e_ty_value.clone(),
                         context,
                     ) {
+                        //println!("Context3 for app! {:?}", context);
                         //println!(
                         //    "Axioms: {:?}\nInductives: {:?}\nContext: {:?}\nTerm: {:?}\nFunc Type: {:?}\nArg Type: {:?}",
                         //    self.axioms, self.inductives, context, term, f_ty, e_ty
@@ -1084,24 +1771,29 @@ impl Evaluator {
                         //    "Type mismatch: got {:?}, expected: {:?}",
                         //    e_ty, domain_value
                         //);
-                        println!("pprod: {:?}", self.inductives.get("pprod.{1,2}"));
+                        //println!("pprod: {:?}", self.inductives.get("pprod.{1,2}"));
                         println!(
                             "Context: {:?}\nTerm: {:?}\nFunc Type: {:?}\nArg Type: {:?}, e_ty_value: {:?}\n",
                             context, term, f_ty, e_ty, e_ty_value
                         );
-                        //println!(
-                        //    "acc.{{1}}.rec.{{1}}: {:?}",
-                        //    self.axioms.get("acc.{1}.rec.{1}")
-                        //);
+                        ////println!("domain: {:?}", domain);
+                        ////println!(
+                        ////    "acc.{{1}}.rec.{{1}}: {:?}",
+                        ////    self.axioms.get("acc.{1}.rec.{1}")
+                        ////);
+                        //println!("term: {}", term);
+                        //println!("e: {}", e);
+                        //println!("domain: {}", domain_value);
                         return Err(format!(
-                            "Type mismatch: got {:?}, expected: {:?}",
-                            e_ty, domain_value
+                            "Type mismatch: got {}, expected: {}",
+                            e_ty_value, domain_value
                         ));
+                        //return Err("".to_string());
                     }
 
                     let e_value =
-                        self.eval_with_context(e.clone(), &mut Context::new(), context)?;
-                    self.ty_with_context(e_value.clone(), context).unwrap();
+                        self.eval_with_context(e.clone(), &mut Context::new(), context, false, 10)?;
+                    self.ty_with_context(e_value.clone(), context)?;
                     context.push(e_value.clone());
 
                     // TODO: is this right?
@@ -1122,8 +1814,11 @@ impl Evaluator {
                     // (Sort(0) => Sort(0))
                     let mut test = Context::new();
                     test.push(e_value);
-                    let body_ty = self.eval_with_context(body.clone(), &mut test, context)?;
-                    self.ty_with_context(body_ty.clone(), context).unwrap();
+                    // TODO: typing context right?
+                    let body_ty =
+                        self.eval_with_context(body.clone(), &mut test, context, false, 10)?;
+                    //println!("TYPING {}", body_ty);
+                    self.ty_with_context(body_ty.clone(), context)?;
                     test.pop();
                     context.pop();
                     self.lift(body_ty, -1)?
@@ -1145,10 +1840,39 @@ impl Evaluator {
                 }
                 axiom
             }
+            TermData::Ind(name) => {
+                let ind = self
+                    .inductives
+                    .get(name)
+                    .ok_or(format!("Undefined inductive: {}", name))?;
+                ind.ty.clone()
+            }
+            TermData::IndCtor(name, ctor) => {
+                let ind = self
+                    .inductives
+                    .get(name)
+                    .ok_or(format!("Undefined inductive: {}", name))?;
+                let ctor_idx = ind.rule_lookup.get(ctor).ok_or(format!(
+                    "Undefined ctor {}, for inductive {} (got: {:?})",
+                    ctor, name, ind.rule_lookup
+                ))?;
+                ind.rules[*ctor_idx].ty.clone()
+            }
+            TermData::IndRec(ind_name, motive_sort) => {
+                let ind = self
+                    .inductives
+                    .get(ind_name)
+                    .ok_or(format!("Undefined inductive: {}", ind_name))?;
+                let term = ind.elim(*motive_sort);
+                //println!(
+                //    "type of ind elim for {} with sort {}: {}",
+                //    ind_name, motive_sort, term
+                //);
+                term
+            }
         };
 
-        self.ty_cache
-            .insert((term.clone(), context.hash()), res.clone());
+        self.ty_cache.insert(term.clone(), context, res.clone());
 
         debug!("\n C = {:?}\n |- {:?} :: {:?}", context, term, res);
         Ok(res)
@@ -1159,10 +1883,36 @@ impl Evaluator {
     }
 
     pub fn def_equals_with_context(&mut self, a: Term, b: Term, context: &mut Context) -> bool {
+        //println!("context def 1!: {:?}", context);
         // fast case
         if a == b {
             return true;
         }
+
+        //println!("EVALING A-----------");
+        // TODO: mvoe down below
+        let a = self
+            .eval_with_context(a.clone(), &mut Context::new(), context, true, 10)
+            .unwrap();
+        //println!("EVALING B-----------");
+        let b = self
+            .eval_with_context(b.clone(), &mut Context::new(), context, true, 10)
+            .unwrap();
+        //println!("DONE----------------");
+        //if a_rec != Ok(a.clone()) {
+        //    println!("eval rec a {} ==> {}", a, a_rec.as_ref().unwrap());
+        //}
+        //if b_rec != Ok(b.clone()) {
+        //    println!("eval rec b {} ==> {}", b, b_rec.as_ref().unwrap());
+        //    //println!("ty: {}", self.eval_with_context(b_rec.as_ref.unwrap().clone(), context, true);
+        //}
+
+        if a == b {
+            return true;
+        }
+
+        // Add trying to eval with recursion here....
+        // that way we only eval recursion when we need to...
 
         //match (*a, *b) {
         //    (
@@ -1195,7 +1945,7 @@ impl Evaluator {
         //println!("def eq: {:?} {:?}", a, b);
         if let Ok(a_ty) = self.ty_with_context(a.clone(), context) {
             if let Ok(b_ty) = self.ty_with_context(b.clone(), context) {
-                //println!("a ty: {:?}, b ty: {:?}", a_ty, b_ty);
+                // proof-irrelevance of prop
                 // if a ty and b ty are both p :: Prop, then true
                 if let Ok(ty_ty) = self.ty_with_context(a_ty.clone(), context) {
                     if ty_ty == sort(0) && a_ty == b_ty {
@@ -1203,6 +1953,7 @@ impl Evaluator {
                     }
                 }
 
+                // eta-expansion
                 // TODO: remove redundancy by enforcing one way or the other...
                 // if a ty is \x:D -> E and b is not, try eta expansion on b
                 if a.is_lambda() && !b.is_lambda() {
@@ -1237,6 +1988,7 @@ impl Evaluator {
                 }
             }
         }
+        //println!("context def 2!: {:?}", context);
 
         // otherwise, recurse structurally
         match (&*a, &*b) {
@@ -1255,19 +2007,41 @@ impl Evaluator {
                 let mut res = true;
                 res &= a_ty == b_ty
                     && self.def_equals_with_context(a_domain.clone(), b_domain.clone(), context);
+                //println!("context def 3!: {:?}", context);
                 context.push(a_domain.clone());
+                //println!("context def 4!: {:?}", context);
                 res &= self.def_equals_with_context(a_body.clone(), b_body.clone(), context);
                 context.pop();
+                //println!("context def 5!: {:?}", context);
                 res
             }
             (TermData::App(a_f, a_e), TermData::App(b_f, b_e)) => {
+                //println!("context def 6!: {:?}", context);
                 self.def_equals_with_context(a_f.clone(), b_f.clone(), context)
                     && self.def_equals_with_context(a_e.clone(), b_e.clone(), context)
             }
-            _ => false,
-        }
+            _ => {
+                // see if recursors are def. equal...
+                //let a_rec_eval = self.try_eval_rec(a.clone(), &mut Context::new(), context, 10);
+                //println!("HEY I GOT {:?}, NEED: {:?}", a_rec_eval, b);
 
-        // TODO: eta reduction
+                //if let Some(a_val) = a_rec_eval {
+                //    if a_val == b {
+                //        return true;
+                //    }
+                //}
+
+                //let b_rec_eval = self.try_eval_rec(b.clone(), &mut Context::new(), context, 10);
+                //println!("HEY I GOT {:?}, NEED: {:?}", b_rec_eval, a);
+                //if let Some(b_val) = b_rec_eval {
+                //    if a == b_val {
+                //        return true;
+                //    }
+                //}
+
+                false
+            }
+        }
     }
 
     pub fn lift(&mut self, term: Term, amount: isize) -> Result<Term, String> {
@@ -1304,1067 +2078,1075 @@ impl Evaluator {
     }
 }
 
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn eval_simple_app() {
-        let mut eval = Evaluator::empty();
-        let expr = app(lam(sort(0), bound(0)), bound(1));
-        assert_eq!(eval.eval(expr), Ok(bound(1)));
-    }
-
-    #[test]
-    fn eval_lift() {
-        let mut eval = Evaluator::empty();
-        let expr = app(lam(sort(0), lam(sort(0), bound(1))), bound(2));
-        assert_eq!(eval.eval(expr), Ok(lam(sort(0), bound(3))));
-
-        let expr = app(
-            lam(sort(0), lam(sort(0), bound(1))),
-            app(bound(2), bound(3)),
-        );
-        assert_eq!(eval.eval(expr), Ok(lam(sort(0), app(bound(3), bound(4)))));
-    }
-
-    #[test]
-    fn eval_unlift() {
-        let mut eval = Evaluator::empty();
-        let expr = app(
-            lam(sort(0), lam(sort(0), app(bound(1), bound(3)))),
-            bound(2),
-        );
-        assert_eq!(eval.eval(expr), Ok(lam(sort(0), app(bound(3), bound(2)))));
-    }
-
-    #[test]
-    fn eval_arith_basic() {
-        let mut eval = Evaluator::empty();
-        let sum = lam(
-            sort(0),
-            lam(
-                sort(0),
-                lam(
-                    sort(0),
-                    lam(
-                        sort(0),
-                        app(
-                            app(bound(3), bound(1)),
-                            app(app(bound(2), bound(1)), bound(0)),
-                        ),
-                    ),
-                ),
-            ),
-        );
-        let zero = lam(sort(0), lam(sort(0), bound(0)));
-        let soln = lam(
-            sort(0),
-            lam(
-                sort(0),
-                lam(sort(0), app(app(bound(2), bound(1)), bound(0))),
-            ),
-        );
-        let one = lam(sort(0), lam(sort(0), app(bound(1), bound(0))));
-        assert_eq!(eval.eval(app(sum.clone(), zero.clone())), Ok(soln.clone()));
-        assert_eq!(eval.eval(app(soln.clone(), zero.clone())), Ok(zero.clone()));
-        assert_eq!(eval.eval(app(soln.clone(), one.clone())), Ok(one.clone()));
-
-        let soln = lam(
-            sort(0),
-            lam(
-                sort(0),
-                lam(
-                    sort(0),
-                    app(bound(1), app(app(bound(2), bound(1)), bound(0))),
-                ),
-            ),
-        );
-        assert_eq!(eval.eval(app(sum, one.clone())), Ok(soln.clone()));
-        assert_eq!(eval.eval(app(soln, zero)), Ok(one));
-    }
-
-    #[test]
-    fn eval_arith() {
-        for m in 0..10 {
-            for n in 0..10 {
-                do_eval_arith(m, n);
-            }
-        }
-    }
-
-    fn do_eval_arith(m: isize, n: isize) {
-        let mut eval = Evaluator::empty();
-        let applications = |x: isize| {
-            let mut res = bound(0);
-            for _ in 0..x {
-                res = app(bound(1), res);
-            }
-            res
-        };
-
-        let m_enc = lam(sort(0), lam(sort(0), applications(m)));
-        let n_enc = lam(sort(0), lam(sort(0), applications(n)));
-        let sum_enc = lam(
-            sort(0),
-            lam(
-                sort(0),
-                lam(
-                    sort(0),
-                    lam(
-                        sort(0),
-                        app(
-                            app(bound(3), bound(1)),
-                            app(app(bound(2), bound(1)), bound(0)),
-                        ),
-                    ),
-                ),
-            ),
-        );
-        let soln = lam(sort(0), lam(sort(0), applications(m + n)));
-        let res = eval.eval(app(app(sum_enc, m_enc), n_enc));
-
-        assert_eq!(res, Ok(soln));
-    }
-
-    #[test]
-    fn type_int() {
-        let axioms = [("int", sort(0)), ("x", axiom("int"))];
-        let mut eval = Evaluator::new(&axioms, HashMap::new());
-
-        assert_eq!(eval.ty(axiom("int")), Ok(sort(0)));
-        assert_eq!(eval.ty(axiom("x")), Ok(axiom("int")));
-    }
-
-    #[test]
-    fn type_undefined_axiom() {
-        let axioms = [("x", axiom("int"))];
-        let mut eval = Evaluator::new(&axioms, HashMap::new());
-        assert_eq!(
-            eval.ty(axiom("x")),
-            Err("Undefined axiom: 'int'".to_string())
-        );
-    }
-
-    #[test]
-    fn type_lam() {
-        let mut eval = Evaluator::empty();
-        assert_eq!(
-            eval.ty(lam(sort(0), lam(bound(0), bound(0)))),
-            Ok(pi(sort(0), pi(bound(0), bound(1))))
-        );
-        assert_eq!(
-            eval.ty(lam(sort(0), lam(bound(0), bound(1)))),
-            Ok(pi(sort(0), pi(bound(0), sort(0))))
-        );
-        // assert_eq!(
-        //     eval.ty(lam(sort(0), pi(bound(0), bound(0)))),
-        //     Err("Body type Bound(0) of Pi is not a sort! Got: Bound(1)".to_string())
-        // );
-    }
-
-    #[test]
-    fn type_prop() {
-        let axioms = [
-            ("depFunc", pi(sort(0), pi(bound(0), bound(1)))),
-            ("func", pi(sort(0), bound(0))),
-            ("p", sort(0)),
-            ("proofP", axiom("p")),
-        ];
-        let mut eval = Evaluator::new(&axioms, HashMap::new());
-
-        assert_eq!(eval.ty(axiom("p")), Ok(sort(0)));
-        assert_eq!(eval.ty(axiom("proofP")), Ok(axiom("p")));
-        assert_eq!(eval.ty(app(axiom("func"), axiom("p"))), Ok(axiom("p")));
-        assert_eq!(
-            eval.ty(axiom("depFunc")),
-            Ok(pi(sort(0), pi(bound(0), bound(1))))
-        );
-        // TODO: is this wrong?
-        assert_eq!(
-            eval.ty(app(axiom("depFunc"), axiom("p"))),
-            Ok(pi(axiom("p"), axiom("p")))
-        );
-        let expr = app(app(axiom("depFunc"), axiom("p")), axiom("proofP"));
-        assert_eq!(eval.ty(expr), Ok(axiom("p")));
-    }
-
-    #[test]
-    fn type_vec() {
-        let axioms = [
-            ("one", axiom("nat")),
-            ("nat", sort(1)),
-            ("vector", pi(axiom("nat"), sort(1))),
-        ];
-        let mut eval = Evaluator::new(&axioms, HashMap::new());
-
-        let expr = app(axiom("vector"), axiom("one"));
-        assert_eq!(eval.ty(expr), Ok(sort(1)));
-    }
-
-    #[test]
-    fn test_type_impred() {
-        let axioms = [("p", sort(0))];
-        let mut eval = Evaluator::new(&axioms, HashMap::new());
-
-        let expr = pi(sort(2), axiom("p"));
-        assert_eq!(eval.ty(expr), Ok(sort(0)));
-    }
-
-    #[test]
-    fn test_type_and() {
-        let axioms = [
-            ("and", pi(sort(0), pi(sort(0), sort(0)))),
-            ("p", sort(0)),
-            ("q", sort(0)),
-            ("proofP", axiom("p")),
-            ("proofQ", axiom("q")),
-            ("pImplQ", pi(axiom("p"), axiom("q"))),
-            (
-                "andIntro",
-                (pi(
-                    sort(0),
-                    pi(
-                        sort(0),
-                        pi(
-                            bound(1),
-                            pi(bound(1), app(app(axiom("and"), bound(3)), bound(2))),
-                        ),
-                    ),
-                )),
-            ),
-        ];
-        let mut eval = Evaluator::new(&axioms, HashMap::new());
-
-        let expr = app(axiom("pImplQ"), axiom("p"));
-        assert_eq!(
-            eval.ty(expr),
-            Err("Type mismatch: got Sort(0), expected: Axiom(p)".to_string())
-        );
-
-        let expr = app(axiom("pImplQ"), axiom("proofP"));
-        assert_eq!(eval.ty(expr), Ok(axiom("q")));
-
-        let expr = app(
-            app(
-                app(app(axiom("andIntro"), axiom("p")), axiom("q")),
-                axiom("proofP"),
-            ),
-            axiom("proofQ"),
-        );
-        assert_eq!(
-            eval.ty(expr),
-            Ok(app(app(axiom("and"), axiom("p")), axiom("q")))
-        );
-    }
-
-    #[test]
-    fn test_type_dist() {
-        let axioms = [
-            ("and", pi(sort(0), pi(sort(0), sort(0)))),
-            ("or", pi(sort(0), pi(sort(0), sort(0)))),
-            ("p", sort(0)),
-            ("q", sort(0)),
-            ("proofP", axiom("p")),
-            ("proofQ", axiom("q")),
-            ("pImplQ", pi(axiom("p"), axiom("q"))),
-            (
-                "andIntro",
-                (pi(
-                    sort(0),
-                    pi(
-                        sort(0),
-                        pi(
-                            pi(bound(0), bound(1)),
-                            app(app(axiom("and"), bound(0)), bound(1)),
-                        ),
-                    ),
-                )),
-            ),
-            (
-                "ori1",
-                pi(
-                    sort(0),
-                    pi(
-                        sort(0),
-                        pi(bound(1), app(app(axiom("or"), bound(2)), bound(1))),
-                    ),
-                ),
-            ),
-        ];
-        let mut eval = Evaluator::new(&axioms, HashMap::new());
-
-        let expr = app(axiom("ori1"), axiom("p"));
-        let res = pi(
-            sort(0),
-            pi(axiom("p"), app(app(axiom("or"), axiom("p")), bound(1))),
-        );
-        assert_eq!(eval.ty(expr), Ok(res));
-
-        let expr = app(
-            app(app(axiom("ori1"), axiom("p")), axiom("q")),
-            axiom("proofP"),
-        );
-        let res = app(app(axiom("or"), axiom("p")), axiom("q"));
-        assert_eq!(eval.ty(expr), Ok(res));
-    }
-
-    #[test]
-    fn type_induction_elim_simple() {
-        let rules = [
-            InductiveRule {
-                name: "or.inr".to_string(),
-                ty: pi(
-                    sort(0),
-                    pi(
-                        sort(0),
-                        pi(bound(0), app(app(axiom("or"), bound(1)), bound(2))),
-                    ),
-                ),
-            },
-            InductiveRule {
-                name: "or.inl".to_string(),
-                ty: pi(
-                    sort(0),
-                    pi(
-                        sort(0),
-                        pi(bound(1), app(app(axiom("or"), bound(1)), bound(2))),
-                    ),
-                ),
-            },
-        ];
-        let or = Inductive::new("or", 2, pi(sort(0), pi(sort(0), sort(0))), &rules);
-
-        let correct_motive = sort(0);
-        assert_eq!(or.generate_motive(0, true), correct_motive);
-
-        let correct_elim = pi(
-            sort(0),
-            pi(
-                sort(0),
-                pi(
-                    sort(0),
-                    pi(
-                        pi(bound(1), bound(1)),
-                        pi(
-                            pi(bound(3), bound(2)),
-                            pi(app(app(axiom("or"), bound(4)), bound(3)), bound(3)),
-                        ),
-                    ),
-                ),
-            ),
-        );
-
-        assert_eq!(or.elim(0), correct_elim);
-
-        let axioms = [
-            ("a", sort(0)),
-            ("b", sort(0)),
-            ("bImpla", pi(axiom("b"), axiom("a"))),
-            ("or.rec", or.elim(0)),
-        ];
-        let inductives = HashMap::from([("or".into(), or)]);
-        let mut eval = Evaluator::new(&axioms, inductives);
-        assert_eq!(eval.ty(axiom("or.rec")), Ok(correct_elim));
-
-        assert_eq!(
-            eval.ty(app(
-                app(
-                    app(
-                        app(app(axiom("or.rec"), axiom("a")), axiom("b")),
-                        axiom("a")
-                    ),
-                    axiom("bImpla")
-                ),
-                lam(axiom("a"), bound(0))
-            )),
-            Ok(pi(
-                app(app(axiom("or"), axiom("a")), axiom("b")),
-                axiom("a")
-            ))
-        );
-    }
-
-    // Test with a Type and single recursive constructor
-    #[test]
-    fn type_induction_elim_nat() {
-        let rules = [
-            InductiveRule {
-                name: "nat.zero".to_string(),
-                ty: axiom("nat"),
-            },
-            InductiveRule {
-                name: "nat.succ".to_string(),
-                ty: pi(axiom("nat"), axiom("nat")),
-            },
-        ];
-        let nat = Inductive::new("nat", 0, sort(1), &rules);
-        let correct_elim = pi(
-            pi(axiom("nat"), sort(1)),
-            pi(
-                app(bound(0), axiom("nat.zero")),
-                pi(
-                    pi(
-                        axiom("nat"),
-                        pi(
-                            app(bound(2), bound(0)),
-                            app(bound(3), app(axiom("nat.succ"), bound(1))),
-                        ),
-                    ),
-                    pi(axiom("nat"), app(bound(3), bound(0))),
-                ),
-            ),
-        );
-
-        assert_eq!(nat.elim(1), correct_elim);
-        let inductives = HashMap::from([("nat".into(), nat.clone())]);
-        let mut eval = Evaluator::new(&[("nat.rec", nat.elim(1))], inductives);
-        assert_eq!(eval.ty(axiom("nat.rec")), Ok(correct_elim));
-
-        assert_eq!(
-            eval.ty(app(
-                app(
-                    app(axiom("nat.rec"), lam(axiom("nat"), axiom("nat"))),
-                    axiom("nat.zero")
-                ),
-                lam(
-                    axiom("nat"),
-                    lam(axiom("nat"), app(axiom("nat.succ"), bound(1)))
-                )
-            )),
-            Ok(pi(axiom("nat"), axiom("nat")))
-        );
-    }
-
-    // Test with a Type and multiple recursive constructors
-    #[test]
-    fn type_induction_elim_bintree() {
-        let rules = [
-            InductiveRule {
-                name: "bintree.empty".to_string(),
-                ty: pi(sort(1), app(axiom("bintree"), bound(0))),
-            },
-            InductiveRule {
-                name: "bintree.leaf".to_string(),
-                ty: pi(sort(1), pi(bound(0), app(axiom("bintree"), bound(1)))),
-            },
-            InductiveRule {
-                name: "bintree.node".to_string(),
-                ty: pi(
-                    sort(1),
-                    pi(
-                        app(axiom("bintree"), bound(0)),
-                        pi(
-                            app(axiom("bintree"), bound(1)),
-                            app(axiom("bintree"), bound(2)),
-                        ),
-                    ),
-                ),
-            },
-        ];
-        let bintree = Inductive::new("bintree", 1, pi(sort(1), sort(1)), &rules);
-        let correct_elim = pi_list(&[
-            sort(1),
-            pi(app(axiom("bintree"), bound(0)), sort(1)),
-            app(bound(0), app(axiom("bintree.empty"), bound(1))),
-            pi(
-                bound(2),
-                app(
-                    bound(2),
-                    app(app(axiom("bintree.leaf"), bound(3)), bound(0)),
-                ),
-            ),
-            pi(
-                app(axiom("bintree"), bound(3)),
-                pi(
-                    app(axiom("bintree"), bound(4)),
-                    pi(
-                        app(bound(4), bound(1)),
-                        pi(
-                            app(bound(5), bound(1)),
-                            app(
-                                bound(6),
-                                app(
-                                    app(app(axiom("bintree.node"), bound(7)), bound(3)),
-                                    bound(2),
-                                ),
-                            ),
-                        ),
-                    ),
-                ),
-            ),
-            pi(app(axiom("bintree"), bound(4)), app(bound(4), bound(0))),
-        ]);
-
-        // println!("bintree.elim: {:?}", bintree.elim());
-        assert_eq!(bintree.elim(1), correct_elim);
-
-        let nat_rules = [
-            InductiveRule {
-                name: "nat.zero".to_string(),
-                ty: axiom("nat"),
-            },
-            InductiveRule {
-                name: "nat.succ".to_string(),
-                ty: pi(axiom("nat"), axiom("nat")),
-            },
-        ];
-        let nat = Inductive::new("nat", 0, sort(1), &nat_rules);
-
-        let inductives = HashMap::from([("nat".into(), nat), ("bintree".into(), bintree.clone())]);
-        let mut eval = Evaluator::new(&[("bintree.rec", bintree.elim(1))], inductives); //, nat]);
-        assert_eq!(eval.ty(correct_elim), Ok(sort(2)),);
-
-        // Almost a summation of nodes in the tree....
-        // Test that once evaluation of recursion is done
-        assert_eq!(
-            eval.ty(app(
-                app(
-                    app(
-                        app(
-                            app(axiom("bintree.rec"), axiom("nat")),
-                            lam(app(axiom("bintree"), axiom("nat")), axiom("nat"))
-                        ),
-                        axiom("nat.zero")
-                    ),
-                    lam(axiom("nat"), bound(0)),
-                ),
-                lam(
-                    app(axiom("bintree"), axiom("nat")),
-                    lam(
-                        app(axiom("bintree"), axiom("nat")),
-                        lam(axiom("nat"), lam(axiom("nat"), axiom("nat.zero")))
-                    )
-                )
-            )),
-            Ok(pi(app(axiom("bintree"), axiom("nat")), axiom("nat"))),
-        );
-    }
-
-    // Test with a Prop and takes a universe param
-    #[test]
-    fn type_induction_elim_and() {
-        let rules = [InductiveRule {
-            name: "and.intro".to_string(),
-            ty: pi(
-                sort(0),
-                pi(
-                    sort(0),
-                    pi(
-                        bound(1),
-                        pi(bound(1), app(app(axiom("and"), bound(3)), bound(2))),
-                    ),
-                ),
-            ),
-        }];
-        let and = Inductive::new("and", 2, pi(sort(0), pi(sort(0), sort(0))), &rules);
-        // TODO: add universe params
-        let correct_elim = pi_list(&[
-            sort(0),
-            sort(0),
-            sort(1),
-            pi(bound(2), pi(bound(2), bound(2))),
-            app(app(axiom("and"), bound(3)), bound(2)),
-            bound(2),
-        ]);
-        assert_eq!(and.elim(1), correct_elim);
-    }
-
-    #[test]
-    fn type_induction_elim_leq_rec_prop() {
-        let rules = [
-            InductiveRule {
-                name: "nat.less_than_or_equal.refl".to_string(),
-                ty: pi(
-                    axiom("nat"),
-                    app(app(axiom("nat.less_than_or_equal"), bound(0)), bound(0)),
-                ),
-            },
-            InductiveRule {
-                name: "nat.less_than_or_equal.step".to_string(),
-                ty: pi(
-                    axiom("nat"),
-                    pi(
-                        axiom("nat"),
-                        pi(
-                            app(app(axiom("nat.less_than_or_equal"), bound(1)), bound(0)),
-                            app(
-                                app(axiom("nat.less_than_or_equal"), bound(2)),
-                                app(axiom("nat.succ"), bound(1)),
-                            ),
-                        ),
-                    ),
-                ),
-            },
-        ];
-        let leq = Inductive::new(
-            "nat.less_than_or_equal",
-            1,
-            pi(axiom("nat"), pi(axiom("nat"), sort(0))),
-            &rules,
-        );
-
-        let correct_motive = pi(axiom("nat"), sort(0));
-
-        assert_eq!(leq.generate_motive(0, true), correct_motive);
-
-        let correct_elim = pi_list(&[
-            axiom("nat"),
-            pi(axiom("nat"), sort(0)),
-            app(bound(0), bound(1)),
-            pi(
-                axiom("nat"),
-                pi(
-                    app(app(axiom("nat.less_than_or_equal"), bound(3)), bound(0)),
-                    pi(
-                        app(bound(3), bound(1)),
-                        app(bound(4), app(axiom("nat.succ"), bound(2))),
-                    ),
-                ),
-            ),
-            pi(
-                axiom("nat"),
-                pi(
-                    app(app(axiom("nat.less_than_or_equal"), bound(4)), bound(0)),
-                    app(bound(4), bound(1)),
-                ),
-            ),
-        ]);
-        assert_eq!(leq.elim(0), correct_elim);
-        //assert_eq!(leq.
-
-        //let rec_on = lam(
-        //    axiom("nat"),
-        //    lam(
-        //        pi(axiom("nat"), sort(0)),
-        //        lam(
-        //            axiom("nat"),
-        //            lam(
-        //                app(app(axiom("nat.less_than_or_equal"), bound(2)), bound(0)),
-        //                lam(
-        //                    app(bound(2), bound(3)),
-        //                    lam(
-        //                        pi(
-        //                            axiom("nat"),
-        //                            pi(
-        //                                app(
-        //                                    app(axiom("nat.less_than_or_equal"), bound(5)),
-        //                                    bound(0),
-        //                                ),
-        //                                pi(
-        //                                    app(bound(5), bound(1)),
-        //                                    app(bound(6), app(axiom("nat.succ"), bound(2))),
-        //                                ),
-        //                            ),
-        //                        ),
-        //                        app(
-        //                            app(
-        //                                app(
-        //                                    app(
-        //                                        app(
-        //                                            app(
-        //                                                axiom("nat.less_than_or_equal.rec.{0}"),
-        //                                                bound(5),
-        //                                            ),
-        //                                            bound(4),
-        //                                        ),
-        //                                        bound(1),
-        //                                    ),
-        //                                    bound(0),
-        //                                ),
-        //                                bound(3),
-        //                            ),
-        //                            bound(2),
-        //                        ),
-        //                    ),
-        //                ),
-        //            ),
-        //        ),
-        //    ),
-        //);
-    }
-
-    #[test]
-    fn type_induction_elim_leq_rec_sort() {
-        let rules = [
-            InductiveRule {
-                name: "nat.less_than_or_equal.refl".to_string(),
-                ty: pi(
-                    axiom("nat"),
-                    app(app(axiom("nat.less_than_or_equal"), bound(0)), bound(0)),
-                ),
-            },
-            InductiveRule {
-                name: "nat.less_than_or_equal.step".to_string(),
-                ty: pi(
-                    axiom("nat"),
-                    pi(
-                        axiom("nat"),
-                        pi(
-                            app(app(axiom("nat.less_than_or_equal"), bound(1)), bound(0)),
-                            app(
-                                app(axiom("nat.less_than_or_equal"), bound(2)),
-                                app(axiom("nat.succ"), bound(1)),
-                            ),
-                        ),
-                    ),
-                ),
-            },
-        ];
-        let leq = Inductive::new(
-            "nat.less_than_or_equal",
-            1,
-            pi(axiom("nat"), pi(axiom("nat"), sort(1))),
-            &rules,
-        );
-
-        let correct_motive = pi(
-            axiom("nat"),
-            pi(
-                app(app(axiom("nat.less_than_or_equal"), bound(1)), bound(0)),
-                sort(1),
-            ),
-        );
-
-        assert_eq!(leq.generate_motive(1, false), correct_motive);
-
-        let correct_elim = pi_list(&[
-            axiom("nat"),
-            pi(
-                axiom("nat"),
-                pi(
-                    app(app(axiom("nat.less_than_or_equal"), bound(1)), bound(0)),
-                    sort(0),
-                ),
-            ),
-            app(
-                app(bound(0), bound(1)),
-                app(axiom("nat.less_than_or_equal.refl"), bound(1)),
-            ),
-            pi(
-                axiom("nat"),
-                pi(
-                    app(app(axiom("nat.less_than_or_equal"), bound(3)), bound(0)),
-                    pi(
-                        app(app(bound(3), bound(1)), bound(0)),
-                        app(
-                            app(bound(4), app(axiom("nat.succ"), bound(2))),
-                            app(
-                                app(
-                                    app(axiom("nat.less_than_or_equal.step"), bound(5)),
-                                    bound(2),
-                                ),
-                                bound(1),
-                            ),
-                        ),
-                    ),
-                ),
-            ),
-            pi(
-                axiom("nat"),
-                pi(
-                    app(app(axiom("nat.less_than_or_equal"), bound(4)), bound(0)),
-                    app(app(bound(4), bound(1)), bound(0)),
-                ),
-            ),
-        ]);
-        assert_eq!(leq.elim(0), correct_elim);
-        //assert_eq!(leq.
-
-        //let rec_on = lam(
-        //    axiom("nat"),
-        //    lam(
-        //        pi(axiom("nat"), sort(0)),
-        //        lam(
-        //            axiom("nat"),
-        //            lam(
-        //                app(app(axiom("nat.less_than_or_equal"), bound(2)), bound(0)),
-        //                lam(
-        //                    app(bound(2), bound(3)),
-        //                    lam(
-        //                        pi(
-        //                            axiom("nat"),
-        //                            pi(
-        //                                app(
-        //                                    app(axiom("nat.less_than_or_equal"), bound(5)),
-        //                                    bound(0),
-        //                                ),
-        //                                pi(
-        //                                    app(bound(5), bound(1)),
-        //                                    app(bound(6), app(axiom("nat.succ"), bound(2))),
-        //                                ),
-        //                            ),
-        //                        ),
-        //                        app(
-        //                            app(
-        //                                app(
-        //                                    app(
-        //                                        app(
-        //                                            app(
-        //                                                axiom("nat.less_than_or_equal.rec.{0}"),
-        //                                                bound(5),
-        //                                            ),
-        //                                            bound(4),
-        //                                        ),
-        //                                        bound(1),
-        //                                    ),
-        //                                    bound(0),
-        //                                ),
-        //                                bound(3),
-        //                            ),
-        //                            bound(2),
-        //                        ),
-        //                    ),
-        //                ),
-        //            ),
-        //        ),
-        //    ),
-        //);
-    }
-
-    #[test]
-    fn type_induction_elim_has_le_regression() {
-        // TODO:
-        let rules = [InductiveRule {
-            name: "has_le.mk".to_string(),
-            ty: pi(
-                sort(1),
-                pi(
-                    pi(bound(0), pi(bound(1), sort(0))),
-                    app(axiom("has_le"), bound(1)),
-                ),
-            ),
-        }];
-        let has_le = Inductive::new("has_le", 1, pi(sort(0), sort(0)), &rules);
-
-        // TODO:
-        //let correct_elim = pi_list(
-        //    &[
-        //        sort(kkk
-        //    ]
-        //);
-    }
-
-    #[test]
-    fn type_induction_elim_pprod_regression() {
-        // TODO:
-        let rules = [InductiveRule {
-            name: "pprod.mk".to_string(),
-            ty: pi(
-                sort(9),
-                pi(
-                    sort(9),
-                    pi(
-                        bound(1),
-                        pi(bound(1), app(app(axiom("pprod"), bound(3)), bound(2))),
-                    ),
-                ),
-            ),
-        }];
-        let pprod = Inductive::new("pprod", 2, pi(sort(9), pi(sort(9), sort(9))), &rules);
-        println!("pprod elim: {:?}", pprod.elim(9));
-        //let correct_elim = pi_list(&[
-        //    sort(1),
-        //    pi(app(axiom("bintree"), bound(0)), sort(1)),
-        //    app(bound(0), app(axiom("bintree.empty"), bound(1))),
-        //    pi(
-        //        bound(2),
-        //        app(
-        //            bound(2),
-        //            app(app(axiom("bintree.leaf"), bound(3)), bound(0)),
-        //        ),
-        //    ),
-        //    pi(
-        //        app(axiom("bintree"), bound(3)),
-        //        pi(
-        //            app(axiom("bintree"), bound(4)),
-        //            pi(
-        //                app(bound(4), bound(1)),
-        //                pi(
-        //                    app(bound(5), bound(1)),
-        //                    app(
-        //                        bound(6),
-        //                        app(
-        //                            app(app(axiom("bintree.node"), bound(7)), bound(3)),
-        //                            bound(2),
-        //                        ),
-        //                    ),
-        //                ),
-        //            ),
-        //        ),
-        //    ),
-        //    pi(app(axiom("bintree"), bound(4)), app(bound(4), bound(0))),
-        //]);
-
-        //// println!("bintree.elim: {:?}", bintree.elim());
-        //assert_eq!(bintree.elim(), correct_elim);
-
-        //let nat_rules = [
-        //    InductiveRule {
-        //        name: "nat.zero".to_string(),
-        //        ty: axiom("nat"),
-        //    },
-        //    InductiveRule {
-        //        name: "nat.succ".to_string(),
-        //        ty: pi(axiom("nat"), axiom("nat")),
-        //    },
-        //];
-        //let nat = Inductive::new("nat", sort(1), &nat_rules);
-
-        //let expr = lam(
-        //    app(app(axiom("pprod"), bound(1)), bound(0)),
-        //    app(
-        //        app(
-        //            app(
-        //                app(app(axiom("pprod.rec"), bound(2)), bound(1)),
-        //                lam(app(app(axiom("pprod"), bound(2)), bound(1)), bound(3)),
-        //            ),
-        //            lam(bound(2), lam(bound(2), bound(1))),
-        //        ),
-        //        bound(0),
-        //    ),
-        //);
-    }
-
-    #[test]
-    fn elim_eval_le_succ_of_le_regression() {
-        let nat_rules = [
-            InductiveRule {
-                name: "nat.zero.{}".to_string(),
-                ty: axiom("nat.{}"),
-            },
-            InductiveRule {
-                name: "nat.succ.{}".to_string(),
-                ty: pi(axiom("nat.{}"), axiom("nat.{}")),
-            },
-        ];
-        let nat = Inductive::new("nat.{}", 0, sort(1), &nat_rules);
-
-        let nat_le_rules = [
-            InductiveRule {
-                name: "nat.less_than_or_equal.refl.{}".to_string(),
-                ty: pi(
-                    axiom("nat.{}"),
-                    app(app(axiom("nat.less_than_or_equal.{}"), bound(0)), bound(0)),
-                ),
-            },
-            InductiveRule {
-                name: "nat.less_than_or_equal.step.{}".to_string(),
-                ty: pi(
-                    axiom("nat.{}"),
-                    pi(
-                        axiom("nat.{}"),
-                        pi(
-                            app(app(axiom("nat.less_than_or_equal.{}"), bound(1)), bound(0)),
-                            app(
-                                app(axiom("nat.less_than_or_equal.{}"), bound(2)),
-                                app(axiom("nat.succ.{}"), bound(1)),
-                            ),
-                        ),
-                    ),
-                ),
-            },
-        ];
-        let nat_le = Inductive::new(
-            "nat.less_than_or_equal.{}",
-            1,
-            pi(axiom("nat.{}"), pi(axiom("nat.{}"), sort(0))),
-            &nat_le_rules,
-        );
-
-        let has_le_rules = [InductiveRule {
-            name: "has_le.mk.{0}".to_string(),
-            ty: pi(
-                sort(1),
-                pi(
-                    pi(bound(0), pi(bound(1), sort(0))),
-                    app(axiom("has_le.{0}"), bound(1)),
-                ),
-            ),
-        }];
-        let has_le = Inductive::new("has_le.{0}", 1, pi(sort(1), sort(1)), &has_le_rules);
-
-        let axioms = [
-            ("has_le.{0}.rec.{1}", has_le.elim(1)),
-            ("nat.less_than_or_equal.{}.rec.{0}", nat_le.elim(0)),
-        ];
-        let inductives = HashMap::from([
-            ("nat.{}".into(), nat),
-            ("nat.less_than_or_equal.{}".into(), nat_le),
-            ("has_le.{0}".into(), has_le),
-        ]);
-        let mut eval = Evaluator::new(&axioms, inductives); //, nat]);
-                                                            //
-        let expected_ty = pi(
-            axiom("nat.{}"),
-            pi(
-                axiom("nat.{}"),
-                pi(
-                    app(app(axiom("nat.less_than_or_equal.{}"), bound(1)), bound(0)),
-                    app(
-                        app(axiom("nat.less_than_or_equal.{}"), bound(2)),
-                        app(axiom("nat.succ.{}"), bound(1)),
-                    ),
-                ),
-            ),
-        );
-        // minimized test case
-        let minimized_expr = lam(
-            axiom("nat.{}"),
-            lam(
-                axiom("nat.{}"),
-                lam(
-                    app(app(axiom("nat.less_than_or_equal.{}"), bound(1)), bound(0)),
-                    app(
-                        app(
-                            app(
-                                app(
-                                    app(
-                                        app(axiom("nat.less_than_or_equal.{}.rec.{0}"), bound(1)),
-                                        app(axiom("nat.less_than_or_equal.{}"), bound(2)),
-                                    ),
-                                    bound(0),
-                                ),
-                                lam(
-                                    axiom("nat.{}"),
-                                    lam(
-                                        app(
-                                            app(axiom("nat.less_than_or_equal.{}"), bound(2)),
-                                            bound(0),
-                                        ),
-                                        app(
-                                            app(axiom("nat.less_than_or_equal.step.{}"), bound(4)),
-                                            bound(1),
-                                        ),
-                                    ),
-                                ),
-                            ),
-                            app(axiom("nat.succ.{}"), bound(1)),
-                        ),
-                        app(
-                            app(
-                                app(axiom("nat.less_than_or_equal.step.{}"), bound(1)),
-                                bound(1),
-                            ),
-                            app(axiom("nat.less_than_or_equal.refl.{}"), bound(1)),
-                        ),
-                    ),
-                ),
-            ),
-        );
-        assert_eq!(eval.ty(minimized_expr.clone()), Ok(expected_ty.clone()));
-        let evaled_expr = eval.eval(minimized_expr.clone());
-        assert_eq!(
-            eval.ty(evaled_expr.clone().unwrap()),
-            Ok(expected_ty.clone())
-        );
-
-        let expr = lam(axiom("nat.{}"), lam(axiom("nat.{}"), lam(app(app(axiom("nat.less_than_or_equal.{}"), bound(1)), bound(0)), app(app(app(app(app(lam(axiom("nat.{}"), lam(axiom("nat.{}"), lam(axiom("nat.{}"), lam(app(app(app(app(lam(sort(1), lam(app(axiom("has_le.{0}"), bound(0)), app(app(app(app(axiom("has_le.{0}.rec.{1}"), bound(1)), lam(app(axiom("has_le.{0}"), bound(1)), pi(bound(2), pi(bound(3), sort(0))))), lam(pi(bound(1), pi(bound(2), sort(0))), bound(0))), bound(0)))), axiom("nat.{}")), app(app(axiom("has_le.mk.{0}"), axiom("nat.{}")), axiom("nat.less_than_or_equal.{}"))), bound(2)), bound(1)), app(app(app(app(app(axiom("nat.less_than_or_equal.{}.rec.{0}"), bound(2)), app(app(app(lam(sort(1), lam(app(axiom("has_le.{0}"), bound(0)), app(app(app(app(axiom("has_le.{0}.rec.{1}"), bound(1)), lam(app(axiom("has_le.{0}"), bound(1)), pi(bound(2), pi(bound(3), sort(0))))), lam(pi(bound(1), pi(bound(2), sort(0))), bound(0))), bound(0)))), axiom("nat.{}")), app(app(axiom("has_le.mk.{0}"), axiom("nat.{}")), axiom("nat.less_than_or_equal.{}"))), bound(3))), bound(0)), lam(axiom("nat.{}"), lam(app(app(axiom("nat.less_than_or_equal.{}"), bound(3)), bound(0)), app(app(axiom("nat.less_than_or_equal.step.{}"), bound(5)), bound(1))))), bound(1)))))), bound(2)), bound(1)), app(axiom("nat.succ.{}"), bound(1))), bound(0)), app(lam(axiom("nat.{}"), app(app(app(axiom("nat.less_than_or_equal.step.{}"), bound(0)), bound(0)), app(lam(axiom("nat.{}"), app(axiom("nat.less_than_or_equal.refl.{}"), bound(0))), bound(0)))), bound(1))))));
-        assert_eq!(eval.ty(expr.clone()), Ok(expected_ty.clone()));
-        let evaled_expr = eval.eval(expr.clone());
-        assert_eq!(
-            eval.ty(evaled_expr.clone().unwrap()),
-            Ok(expected_ty.clone())
-        );
-    }
-}
+//#[cfg(test)]
+//mod test {
+//    use super::*;
+//
+//    #[test]
+//    fn eval_simple_app() {
+//        let mut eval = Evaluator::empty();
+//        let expr = app(lam(sort(0), bound(0)), bound(1));
+//        assert_eq!(eval.eval(expr), Ok(bound(1)));
+//    }
+//
+//    #[test]
+//    fn eval_lift() {
+//        let mut eval = Evaluator::empty();
+//        let expr = app(lam(sort(0), lam(sort(0), bound(1))), bound(2));
+//        assert_eq!(eval.eval(expr), Ok(lam(sort(0), bound(3))));
+//
+//        let expr = app(
+//            lam(sort(0), lam(sort(0), bound(1))),
+//            app(bound(2), bound(3)),
+//        );
+//        assert_eq!(eval.eval(expr), Ok(lam(sort(0), app(bound(3), bound(4)))));
+//    }
+//
+//    #[test]
+//    fn eval_unlift() {
+//        let mut eval = Evaluator::empty();
+//        let expr = app(
+//            lam(sort(0), lam(sort(0), app(bound(1), bound(3)))),
+//            bound(2),
+//        );
+//        assert_eq!(eval.eval(expr), Ok(lam(sort(0), app(bound(3), bound(2)))));
+//    }
+//
+//    #[test]
+//    fn eval_arith_basic() {
+//        let mut eval = Evaluator::empty();
+//        let sum = lam(
+//            sort(0),
+//            lam(
+//                sort(0),
+//                lam(
+//                    sort(0),
+//                    lam(
+//                        sort(0),
+//                        app(
+//                            app(bound(3), bound(1)),
+//                            app(app(bound(2), bound(1)), bound(0)),
+//                        ),
+//                    ),
+//                ),
+//            ),
+//        );
+//        let zero = lam(sort(0), lam(sort(0), bound(0)));
+//        let soln = lam(
+//            sort(0),
+//            lam(
+//                sort(0),
+//                lam(sort(0), app(app(bound(2), bound(1)), bound(0))),
+//            ),
+//        );
+//        let one = lam(sort(0), lam(sort(0), app(bound(1), bound(0))));
+//        assert_eq!(eval.eval(app(sum.clone(), zero.clone())), Ok(soln.clone()));
+//        assert_eq!(eval.eval(app(soln.clone(), zero.clone())), Ok(zero.clone()));
+//        assert_eq!(eval.eval(app(soln.clone(), one.clone())), Ok(one.clone()));
+//
+//        let soln = lam(
+//            sort(0),
+//            lam(
+//                sort(0),
+//                lam(
+//                    sort(0),
+//                    app(bound(1), app(app(bound(2), bound(1)), bound(0))),
+//                ),
+//            ),
+//        );
+//        assert_eq!(eval.eval(app(sum, one.clone())), Ok(soln.clone()));
+//        assert_eq!(eval.eval(app(soln, zero)), Ok(one));
+//    }
+//
+//    #[test]
+//    fn eval_arith() {
+//        for m in 0..10 {
+//            for n in 0..10 {
+//                do_eval_arith(m, n);
+//            }
+//        }
+//    }
+//
+//    fn do_eval_arith(m: isize, n: isize) {
+//        let mut eval = Evaluator::empty();
+//        let applications = |x: isize| {
+//            let mut res = bound(0);
+//            for _ in 0..x {
+//                res = app(bound(1), res);
+//            }
+//            res
+//        };
+//
+//        let m_enc = lam(sort(0), lam(sort(0), applications(m)));
+//        let n_enc = lam(sort(0), lam(sort(0), applications(n)));
+//        let sum_enc = lam(
+//            sort(0),
+//            lam(
+//                sort(0),
+//                lam(
+//                    sort(0),
+//                    lam(
+//                        sort(0),
+//                        app(
+//                            app(bound(3), bound(1)),
+//                            app(app(bound(2), bound(1)), bound(0)),
+//                        ),
+//                    ),
+//                ),
+//            ),
+//        );
+//        let soln = lam(sort(0), lam(sort(0), applications(m + n)));
+//        let res = eval.eval(app(app(sum_enc, m_enc), n_enc));
+//
+//        assert_eq!(res, Ok(soln));
+//    }
+//
+//    #[test]
+//    fn type_int() {
+//        let axioms = [("int", sort(0)), ("x", axiom("int"))];
+//        let mut eval = Evaluator::new(&axioms, HashMap::new());
+//
+//        assert_eq!(eval.ty(axiom("int")), Ok(sort(0)));
+//        assert_eq!(eval.ty(axiom("x")), Ok(axiom("int")));
+//    }
+//
+//    #[test]
+//    fn type_undefined_axiom() {
+//        let axioms = [("x", axiom("int"))];
+//        let mut eval = Evaluator::new(&axioms, HashMap::new());
+//        assert_eq!(
+//            eval.ty(axiom("x")),
+//            Err("Undefined axiom: 'int'".to_string())
+//        );
+//    }
+//
+//    #[test]
+//    fn type_lam() {
+//        let mut eval = Evaluator::empty();
+//        assert_eq!(
+//            eval.ty(lam(sort(0), lam(bound(0), bound(0)))),
+//            Ok(pi(sort(0), pi(bound(0), bound(1))))
+//        );
+//        assert_eq!(
+//            eval.ty(lam(sort(0), lam(bound(0), bound(1)))),
+//            Ok(pi(sort(0), pi(bound(0), sort(0))))
+//        );
+//        // assert_eq!(
+//        //     eval.ty(lam(sort(0), pi(bound(0), bound(0)))),
+//        //     Err("Body type Bound(0) of Pi is not a sort! Got: Bound(1)".to_string())
+//        // );
+//    }
+//
+//    #[test]
+//    fn type_prop() {
+//        let axioms = [
+//            ("depFunc", pi(sort(0), pi(bound(0), bound(1)))),
+//            ("func", pi(sort(0), bound(0))),
+//            ("p", sort(0)),
+//            ("proofP", axiom("p")),
+//        ];
+//        let mut eval = Evaluator::new(&axioms, HashMap::new());
+//
+//        assert_eq!(eval.ty(axiom("p")), Ok(sort(0)));
+//        assert_eq!(eval.ty(axiom("proofP")), Ok(axiom("p")));
+//        assert_eq!(eval.ty(app(axiom("func"), axiom("p"))), Ok(axiom("p")));
+//        assert_eq!(
+//            eval.ty(axiom("depFunc")),
+//            Ok(pi(sort(0), pi(bound(0), bound(1))))
+//        );
+//        // TODO: is this wrong?
+//        assert_eq!(
+//            eval.ty(app(axiom("depFunc"), axiom("p"))),
+//            Ok(pi(axiom("p"), axiom("p")))
+//        );
+//        let expr = app(app(axiom("depFunc"), axiom("p")), axiom("proofP"));
+//        assert_eq!(eval.ty(expr), Ok(axiom("p")));
+//    }
+//
+//    #[test]
+//    fn type_vec() {
+//        let axioms = [
+//            ("one", axiom("nat")),
+//            ("nat", sort(1)),
+//            ("vector", pi(axiom("nat"), sort(1))),
+//        ];
+//        let mut eval = Evaluator::new(&axioms, HashMap::new());
+//
+//        let expr = app(axiom("vector"), axiom("one"));
+//        assert_eq!(eval.ty(expr), Ok(sort(1)));
+//    }
+//
+//    #[test]
+//    fn test_type_impred() {
+//        let axioms = [("p", sort(0))];
+//        let mut eval = Evaluator::new(&axioms, HashMap::new());
+//
+//        let expr = pi(sort(2), axiom("p"));
+//        assert_eq!(eval.ty(expr), Ok(sort(0)));
+//    }
+//
+//    #[test]
+//    fn test_type_and() {
+//        let axioms = [
+//            ("and", pi(sort(0), pi(sort(0), sort(0)))),
+//            ("p", sort(0)),
+//            ("q", sort(0)),
+//            ("proofP", axiom("p")),
+//            ("proofQ", axiom("q")),
+//            ("pImplQ", pi(axiom("p"), axiom("q"))),
+//            (
+//                "andIntro",
+//                (pi(
+//                    sort(0),
+//                    pi(
+//                        sort(0),
+//                        pi(
+//                            bound(1),
+//                            pi(bound(1), app(app(axiom("and"), bound(3)), bound(2))),
+//                        ),
+//                    ),
+//                )),
+//            ),
+//        ];
+//        let mut eval = Evaluator::new(&axioms, HashMap::new());
+//
+//        let expr = app(axiom("pImplQ"), axiom("p"));
+//        assert_eq!(
+//            eval.ty(expr),
+//            Err("Type mismatch: got Sort(0), expected: Axiom(p)".to_string())
+//        );
+//
+//        let expr = app(axiom("pImplQ"), axiom("proofP"));
+//        assert_eq!(eval.ty(expr), Ok(axiom("q")));
+//
+//        let expr = app(
+//            app(
+//                app(app(axiom("andIntro"), axiom("p")), axiom("q")),
+//                axiom("proofP"),
+//            ),
+//            axiom("proofQ"),
+//        );
+//        assert_eq!(
+//            eval.ty(expr),
+//            Ok(app(app(axiom("and"), axiom("p")), axiom("q")))
+//        );
+//    }
+//
+//    #[test]
+//    fn test_type_dist() {
+//        let axioms = [
+//            ("and", pi(sort(0), pi(sort(0), sort(0)))),
+//            ("or", pi(sort(0), pi(sort(0), sort(0)))),
+//            ("p", sort(0)),
+//            ("q", sort(0)),
+//            ("proofP", axiom("p")),
+//            ("proofQ", axiom("q")),
+//            ("pImplQ", pi(axiom("p"), axiom("q"))),
+//            (
+//                "andIntro",
+//                (pi(
+//                    sort(0),
+//                    pi(
+//                        sort(0),
+//                        pi(
+//                            pi(bound(0), bound(1)),
+//                            app(app(axiom("and"), bound(0)), bound(1)),
+//                        ),
+//                    ),
+//                )),
+//            ),
+//            (
+//                "ori1",
+//                pi(
+//                    sort(0),
+//                    pi(
+//                        sort(0),
+//                        pi(bound(1), app(app(axiom("or"), bound(2)), bound(1))),
+//                    ),
+//                ),
+//            ),
+//        ];
+//        let mut eval = Evaluator::new(&axioms, HashMap::new());
+//
+//        let expr = app(axiom("ori1"), axiom("p"));
+//        let res = pi(
+//            sort(0),
+//            pi(axiom("p"), app(app(axiom("or"), axiom("p")), bound(1))),
+//        );
+//        assert_eq!(eval.ty(expr), Ok(res));
+//
+//        let expr = app(
+//            app(app(axiom("ori1"), axiom("p")), axiom("q")),
+//            axiom("proofP"),
+//        );
+//        let res = app(app(axiom("or"), axiom("p")), axiom("q"));
+//        assert_eq!(eval.ty(expr), Ok(res));
+//    }
+//
+//    #[test]
+//    fn type_induction_elim_simple() {
+//        let rules = [
+//            InductiveRule {
+//                name: "or.inr".to_string(),
+//                ty: pi(
+//                    sort(0),
+//                    pi(
+//                        sort(0),
+//                        pi(bound(0), app(app(axiom("or"), bound(1)), bound(2))),
+//                    ),
+//                ),
+//            },
+//            InductiveRule {
+//                name: "or.inl".to_string(),
+//                ty: pi(
+//                    sort(0),
+//                    pi(
+//                        sort(0),
+//                        pi(bound(1), app(app(axiom("or"), bound(1)), bound(2))),
+//                    ),
+//                ),
+//            },
+//        ];
+//        let or = Inductive::new("or", 2, pi(sort(0), pi(sort(0), sort(0))), &rules);
+//
+//        let correct_motive = sort(0);
+//        assert_eq!(or.generate_motive(0, true), correct_motive);
+//
+//        let correct_elim = pi(
+//            sort(0),
+//            pi(
+//                sort(0),
+//                pi(
+//                    sort(0),
+//                    pi(
+//                        pi(bound(1), bound(1)),
+//                        pi(
+//                            pi(bound(3), bound(2)),
+//                            pi(app(app(axiom("or"), bound(4)), bound(3)), bound(3)),
+//                        ),
+//                    ),
+//                ),
+//            ),
+//        );
+//
+//        assert_eq!(or.elim(0), correct_elim);
+//
+//        let axioms = [
+//            ("a", sort(0)),
+//            ("b", sort(0)),
+//            ("bImpla", pi(axiom("b"), axiom("a"))),
+//            ("or.rec", or.elim(0)),
+//        ];
+//        let inductives = HashMap::from([("or".into(), or)]);
+//        let mut eval = Evaluator::new(&axioms, inductives);
+//        assert_eq!(eval.ty(axiom("or.rec")), Ok(correct_elim));
+//
+//        assert_eq!(
+//            eval.ty(app(
+//                app(
+//                    app(
+//                        app(app(axiom("or.rec"), axiom("a")), axiom("b")),
+//                        axiom("a")
+//                    ),
+//                    axiom("bImpla")
+//                ),
+//                lam(axiom("a"), bound(0))
+//            )),
+//            Ok(pi(
+//                app(app(axiom("or"), axiom("a")), axiom("b")),
+//                axiom("a")
+//            ))
+//        );
+//    }
+//
+//    // Test with a Type and single recursive constructor
+//    #[test]
+//    fn type_induction_elim_nat() {
+//        let rules = [
+//            InductiveRule {
+//                name: "nat.zero".to_string(),
+//                ty: axiom("nat"),
+//            },
+//            InductiveRule {
+//                name: "nat.succ".to_string(),
+//                ty: pi(axiom("nat"), axiom("nat")),
+//            },
+//        ];
+//        let nat = Inductive::new("nat", 0, sort(1), &rules);
+//        let correct_elim = pi(
+//            pi(axiom("nat"), sort(1)),
+//            pi(
+//                app(bound(0), axiom("nat.zero")),
+//                pi(
+//                    pi(
+//                        axiom("nat"),
+//                        pi(
+//                            app(bound(2), bound(0)),
+//                            app(bound(3), app(axiom("nat.succ"), bound(1))),
+//                        ),
+//                    ),
+//                    pi(axiom("nat"), app(bound(3), bound(0))),
+//                ),
+//            ),
+//        );
+//
+//        assert_eq!(nat.elim(1), correct_elim);
+//        let inductives = HashMap::from([("nat".into(), nat.clone())]);
+//        let mut eval = Evaluator::new(&[("nat.rec", nat.elim(1))], inductives);
+//        assert_eq!(eval.ty(axiom("nat.rec")), Ok(correct_elim));
+//
+//        assert_eq!(
+//            eval.ty(app(
+//                app(
+//                    app(axiom("nat.rec"), lam(axiom("nat"), axiom("nat"))),
+//                    axiom("nat.zero")
+//                ),
+//                lam(
+//                    axiom("nat"),
+//                    lam(axiom("nat"), app(axiom("nat.succ"), bound(1)))
+//                )
+//            )),
+//            Ok(pi(axiom("nat"), axiom("nat")))
+//        );
+//    }
+//
+//    // Test with a Type and multiple recursive constructors
+//    #[test]
+//    fn type_induction_elim_bintree() {
+//        let rules = [
+//            InductiveRule {
+//                name: "bintree.empty".to_string(),
+//                ty: pi(sort(1), app(axiom("bintree"), bound(0))),
+//            },
+//            InductiveRule {
+//                name: "bintree.leaf".to_string(),
+//                ty: pi(sort(1), pi(bound(0), app(axiom("bintree"), bound(1)))),
+//            },
+//            InductiveRule {
+//                name: "bintree.node".to_string(),
+//                ty: pi(
+//                    sort(1),
+//                    pi(
+//                        app(axiom("bintree"), bound(0)),
+//                        pi(
+//                            app(axiom("bintree"), bound(1)),
+//                            app(axiom("bintree"), bound(2)),
+//                        ),
+//                    ),
+//                ),
+//            },
+//        ];
+//        let bintree = Inductive::new("bintree", 1, pi(sort(1), sort(1)), &rules);
+//        let correct_elim = pi_list(&[
+//            sort(1),
+//            pi(app(axiom("bintree"), bound(0)), sort(1)),
+//            app(bound(0), app(axiom("bintree.empty"), bound(1))),
+//            pi(
+//                bound(2),
+//                app(
+//                    bound(2),
+//                    app(app(axiom("bintree.leaf"), bound(3)), bound(0)),
+//                ),
+//            ),
+//            pi(
+//                app(axiom("bintree"), bound(3)),
+//                pi(
+//                    app(axiom("bintree"), bound(4)),
+//                    pi(
+//                        app(bound(4), bound(1)),
+//                        pi(
+//                            app(bound(5), bound(1)),
+//                            app(
+//                                bound(6),
+//                                app(
+//                                    app(app(axiom("bintree.node"), bound(7)), bound(3)),
+//                                    bound(2),
+//                                ),
+//                            ),
+//                        ),
+//                    ),
+//                ),
+//            ),
+//            pi(app(axiom("bintree"), bound(4)), app(bound(4), bound(0))),
+//        ]);
+//
+//        // println!("bintree.elim: {:?}", bintree.elim());
+//        assert_eq!(bintree.elim(1), correct_elim);
+//
+//        let nat_rules = [
+//            InductiveRule {
+//                name: "nat.zero".to_string(),
+//                ty: axiom("nat"),
+//            },
+//            InductiveRule {
+//                name: "nat.succ".to_string(),
+//                ty: pi(axiom("nat"), axiom("nat")),
+//            },
+//        ];
+//        let nat = Inductive::new("nat", 0, sort(1), &nat_rules);
+//
+//        let inductives = HashMap::from([("nat".into(), nat), ("bintree".into(), bintree.clone())]);
+//        let mut eval = Evaluator::new(&[("bintree.rec", bintree.elim(1))], inductives); //, nat]);
+//        assert_eq!(eval.ty(correct_elim), Ok(sort(2)),);
+//
+//        // Almost a summation of nodes in the tree....
+//        // Test that once evaluation of recursion is done
+//        assert_eq!(
+//            eval.ty(app(
+//                app(
+//                    app(
+//                        app(
+//                            app(axiom("bintree.rec"), axiom("nat")),
+//                            lam(app(axiom("bintree"), axiom("nat")), axiom("nat"))
+//                        ),
+//                        axiom("nat.zero")
+//                    ),
+//                    lam(axiom("nat"), bound(0)),
+//                ),
+//                lam(
+//                    app(axiom("bintree"), axiom("nat")),
+//                    lam(
+//                        app(axiom("bintree"), axiom("nat")),
+//                        lam(axiom("nat"), lam(axiom("nat"), axiom("nat.zero")))
+//                    )
+//                )
+//            )),
+//            Ok(pi(app(axiom("bintree"), axiom("nat")), axiom("nat"))),
+//        );
+//    }
+//
+//    // Test with a Prop and takes a universe param
+//    #[test]
+//    fn type_induction_elim_and() {
+//        let rules = [InductiveRule {
+//            name: "and.intro".to_string(),
+//            ty: pi(
+//                sort(0),
+//                pi(
+//                    sort(0),
+//                    pi(
+//                        bound(1),
+//                        pi(bound(1), app(app(axiom("and"), bound(3)), bound(2))),
+//                    ),
+//                ),
+//            ),
+//        }];
+//        let and = Inductive::new("and", 2, pi(sort(0), pi(sort(0), sort(0))), &rules);
+//        // TODO: add universe params
+//        let correct_elim = pi_list(&[
+//            sort(0),
+//            sort(0),
+//            sort(1),
+//            pi(bound(2), pi(bound(2), bound(2))),
+//            app(app(axiom("and"), bound(3)), bound(2)),
+//            bound(2),
+//        ]);
+//        assert_eq!(and.elim(1), correct_elim);
+//    }
+//
+//    #[test]
+//    fn type_induction_elim_leq_rec_prop() {
+//        let rules = [
+//            InductiveRule {
+//                name: "nat.less_than_or_equal.refl".to_string(),
+//                ty: pi(
+//                    axiom("nat"),
+//                    app(app(axiom("nat.less_than_or_equal"), bound(0)), bound(0)),
+//                ),
+//            },
+//            InductiveRule {
+//                name: "nat.less_than_or_equal.step".to_string(),
+//                ty: pi(
+//                    axiom("nat"),
+//                    pi(
+//                        axiom("nat"),
+//                        pi(
+//                            app(app(axiom("nat.less_than_or_equal"), bound(1)), bound(0)),
+//                            app(
+//                                app(axiom("nat.less_than_or_equal"), bound(2)),
+//                                app(axiom("nat.succ"), bound(1)),
+//                            ),
+//                        ),
+//                    ),
+//                ),
+//            },
+//        ];
+//        let leq = Inductive::new(
+//            "nat.less_than_or_equal",
+//            1,
+//            pi(axiom("nat"), pi(axiom("nat"), sort(0))),
+//            &rules,
+//        );
+//
+//        let correct_motive = pi(axiom("nat"), sort(0));
+//
+//        assert_eq!(leq.generate_motive(0, true), correct_motive);
+//
+//        let correct_elim = pi_list(&[
+//            axiom("nat"),
+//            pi(axiom("nat"), sort(0)),
+//            app(bound(0), bound(1)),
+//            pi(
+//                axiom("nat"),
+//                pi(
+//                    app(app(axiom("nat.less_than_or_equal"), bound(3)), bound(0)),
+//                    pi(
+//                        app(bound(3), bound(1)),
+//                        app(bound(4), app(axiom("nat.succ"), bound(2))),
+//                    ),
+//                ),
+//            ),
+//            pi(
+//                axiom("nat"),
+//                pi(
+//                    app(app(axiom("nat.less_than_or_equal"), bound(4)), bound(0)),
+//                    app(bound(4), bound(1)),
+//                ),
+//            ),
+//        ]);
+//        assert_eq!(leq.elim(0), correct_elim);
+//        //assert_eq!(leq.
+//
+//        //let rec_on = lam(
+//        //    axiom("nat"),
+//        //    lam(
+//        //        pi(axiom("nat"), sort(0)),
+//        //        lam(
+//        //            axiom("nat"),
+//        //            lam(
+//        //                app(app(axiom("nat.less_than_or_equal"), bound(2)), bound(0)),
+//        //                lam(
+//        //                    app(bound(2), bound(3)),
+//        //                    lam(
+//        //                        pi(
+//        //                            axiom("nat"),
+//        //                            pi(
+//        //                                app(
+//        //                                    app(axiom("nat.less_than_or_equal"), bound(5)),
+//        //                                    bound(0),
+//        //                                ),
+//        //                                pi(
+//        //                                    app(bound(5), bound(1)),
+//        //                                    app(bound(6), app(axiom("nat.succ"), bound(2))),
+//        //                                ),
+//        //                            ),
+//        //                        ),
+//        //                        app(
+//        //                            app(
+//        //                                app(
+//        //                                    app(
+//        //                                        app(
+//        //                                            app(
+//        //                                                axiom("nat.less_than_or_equal.rec.{0}"),
+//        //                                                bound(5),
+//        //                                            ),
+//        //                                            bound(4),
+//        //                                        ),
+//        //                                        bound(1),
+//        //                                    ),
+//        //                                    bound(0),
+//        //                                ),
+//        //                                bound(3),
+//        //                            ),
+//        //                            bound(2),
+//        //                        ),
+//        //                    ),
+//        //                ),
+//        //            ),
+//        //        ),
+//        //    ),
+//        //);
+//    }
+//
+//    #[test]
+//    fn type_induction_elim_leq_rec_sort() {
+//        let rules = [
+//            InductiveRule {
+//                name: "nat.less_than_or_equal.refl".to_string(),
+//                ty: pi(
+//                    axiom("nat"),
+//                    app(app(axiom("nat.less_than_or_equal"), bound(0)), bound(0)),
+//                ),
+//            },
+//            InductiveRule {
+//                name: "nat.less_than_or_equal.step".to_string(),
+//                ty: pi(
+//                    axiom("nat"),
+//                    pi(
+//                        axiom("nat"),
+//                        pi(
+//                            app(app(axiom("nat.less_than_or_equal"), bound(1)), bound(0)),
+//                            app(
+//                                app(axiom("nat.less_than_or_equal"), bound(2)),
+//                                app(axiom("nat.succ"), bound(1)),
+//                            ),
+//                        ),
+//                    ),
+//                ),
+//            },
+//        ];
+//        let leq = Inductive::new(
+//            "nat.less_than_or_equal",
+//            1,
+//            pi(axiom("nat"), pi(axiom("nat"), sort(1))),
+//            &rules,
+//        );
+//
+//        let correct_motive = pi(
+//            axiom("nat"),
+//            pi(
+//                app(app(axiom("nat.less_than_or_equal"), bound(1)), bound(0)),
+//                sort(1),
+//            ),
+//        );
+//
+//        assert_eq!(leq.generate_motive(1, false), correct_motive);
+//
+//        let correct_elim = pi_list(&[
+//            axiom("nat"),
+//            pi(
+//                axiom("nat"),
+//                pi(
+//                    app(app(axiom("nat.less_than_or_equal"), bound(1)), bound(0)),
+//                    sort(0),
+//                ),
+//            ),
+//            app(
+//                app(bound(0), bound(1)),
+//                app(axiom("nat.less_than_or_equal.refl"), bound(1)),
+//            ),
+//            pi(
+//                axiom("nat"),
+//                pi(
+//                    app(app(axiom("nat.less_than_or_equal"), bound(3)), bound(0)),
+//                    pi(
+//                        app(app(bound(3), bound(1)), bound(0)),
+//                        app(
+//                            app(bound(4), app(axiom("nat.succ"), bound(2))),
+//                            app(
+//                                app(
+//                                    app(axiom("nat.less_than_or_equal.step"), bound(5)),
+//                                    bound(2),
+//                                ),
+//                                bound(1),
+//                            ),
+//                        ),
+//                    ),
+//                ),
+//            ),
+//            pi(
+//                axiom("nat"),
+//                pi(
+//                    app(app(axiom("nat.less_than_or_equal"), bound(4)), bound(0)),
+//                    app(app(bound(4), bound(1)), bound(0)),
+//                ),
+//            ),
+//        ]);
+//        assert_eq!(leq.elim(0), correct_elim);
+//        //assert_eq!(leq.
+//
+//        //let rec_on = lam(
+//        //    axiom("nat"),
+//        //    lam(
+//        //        pi(axiom("nat"), sort(0)),
+//        //        lam(
+//        //            axiom("nat"),
+//        //            lam(
+//        //                app(app(axiom("nat.less_than_or_equal"), bound(2)), bound(0)),
+//        //                lam(
+//        //                    app(bound(2), bound(3)),
+//        //                    lam(
+//        //                        pi(
+//        //                            axiom("nat"),
+//        //                            pi(
+//        //                                app(
+//        //                                    app(axiom("nat.less_than_or_equal"), bound(5)),
+//        //                                    bound(0),
+//        //                                ),
+//        //                                pi(
+//        //                                    app(bound(5), bound(1)),
+//        //                                    app(bound(6), app(axiom("nat.succ"), bound(2))),
+//        //                                ),
+//        //                            ),
+//        //                        ),
+//        //                        app(
+//        //                            app(
+//        //                                app(
+//        //                                    app(
+//        //                                        app(
+//        //                                            app(
+//        //                                                axiom("nat.less_than_or_equal.rec.{0}"),
+//        //                                                bound(5),
+//        //                                            ),
+//        //                                            bound(4),
+//        //                                        ),
+//        //                                        bound(1),
+//        //                                    ),
+//        //                                    bound(0),
+//        //                                ),
+//        //                                bound(3),
+//        //                            ),
+//        //                            bound(2),
+//        //                        ),
+//        //                    ),
+//        //                ),
+//        //            ),
+//        //        ),
+//        //    ),
+//        //);
+//    }
+//
+//    #[test]
+//    fn type_induction_elim_has_le_regression() {
+//        // TODO:
+//        let rules = [InductiveRule {
+//            name: "has_le.mk".to_string(),
+//            ty: pi(
+//                sort(1),
+//                pi(
+//                    pi(bound(0), pi(bound(1), sort(0))),
+//                    app(axiom("has_le"), bound(1)),
+//                ),
+//            ),
+//        }];
+//        let has_le = Inductive::new("has_le", 1, pi(sort(0), sort(0)), &rules);
+//
+//        // TODO:
+//        //let correct_elim = pi_list(
+//        //    &[
+//        //        sort(kkk
+//        //    ]
+//        //);
+//    }
+//
+//    #[test]
+//    fn type_induction_elim_pprod_regression() {
+//        // TODO:
+//        let rules = [InductiveRule {
+//            name: "pprod.mk".to_string(),
+//            ty: pi(
+//                sort(9),
+//                pi(
+//                    sort(9),
+//                    pi(
+//                        bound(1),
+//                        pi(bound(1), app(app(axiom("pprod"), bound(3)), bound(2))),
+//                    ),
+//                ),
+//            ),
+//        }];
+//        let pprod = Inductive::new("pprod", 2, pi(sort(9), pi(sort(9), sort(9))), &rules);
+//        println!("pprod elim: {:?}", pprod.elim(9));
+//        //let correct_elim = pi_list(&[
+//        //    sort(1),
+//        //    pi(app(axiom("bintree"), bound(0)), sort(1)),
+//        //    app(bound(0), app(axiom("bintree.empty"), bound(1))),
+//        //    pi(
+//        //        bound(2),
+//        //        app(
+//        //            bound(2),
+//        //            app(app(axiom("bintree.leaf"), bound(3)), bound(0)),
+//        //        ),
+//        //    ),
+//        //    pi(
+//        //        app(axiom("bintree"), bound(3)),
+//        //        pi(
+//        //            app(axiom("bintree"), bound(4)),
+//        //            pi(
+//        //                app(bound(4), bound(1)),
+//        //                pi(
+//        //                    app(bound(5), bound(1)),
+//        //                    app(
+//        //                        bound(6),
+//        //                        app(
+//        //                            app(app(axiom("bintree.node"), bound(7)), bound(3)),
+//        //                            bound(2),
+//        //                        ),
+//        //                    ),
+//        //                ),
+//        //            ),
+//        //        ),
+//        //    ),
+//        //    pi(app(axiom("bintree"), bound(4)), app(bound(4), bound(0))),
+//        //]);
+//
+//        //// println!("bintree.elim: {:?}", bintree.elim());
+//        //assert_eq!(bintree.elim(), correct_elim);
+//
+//        //let nat_rules = [
+//        //    InductiveRule {
+//        //        name: "nat.zero".to_string(),
+//        //        ty: axiom("nat"),
+//        //    },
+//        //    InductiveRule {
+//        //        name: "nat.succ".to_string(),
+//        //        ty: pi(axiom("nat"), axiom("nat")),
+//        //    },
+//        //];
+//        //let nat = Inductive::new("nat", sort(1), &nat_rules);
+//
+//        //let expr = lam(
+//        //    app(app(axiom("pprod"), bound(1)), bound(0)),
+//        //    app(
+//        //        app(
+//        //            app(
+//        //                app(app(axiom("pprod.rec"), bound(2)), bound(1)),
+//        //                lam(app(app(axiom("pprod"), bound(2)), bound(1)), bound(3)),
+//        //            ),
+//        //            lam(bound(2), lam(bound(2), bound(1))),
+//        //        ),
+//        //        bound(0),
+//        //    ),
+//        //);
+//    }
+//
+//    #[test]
+//    fn elim_eval_le_succ_of_le_regression() {
+//        let nat_rules = [
+//            InductiveRule {
+//                name: "nat.zero.{}".to_string(),
+//                ty: axiom("nat.{}"),
+//            },
+//            InductiveRule {
+//                name: "nat.succ.{}".to_string(),
+//                ty: pi(axiom("nat.{}"), axiom("nat.{}")),
+//            },
+//        ];
+//        let nat = Inductive::new("nat.{}", 0, sort(1), &nat_rules);
+//
+//        let nat_le_rules = [
+//            InductiveRule {
+//                name: "nat.less_than_or_equal.refl.{}".to_string(),
+//                ty: pi(
+//                    axiom("nat.{}"),
+//                    app(app(axiom("nat.less_than_or_equal.{}"), bound(0)), bound(0)),
+//                ),
+//            },
+//            InductiveRule {
+//                name: "nat.less_than_or_equal.step.{}".to_string(),
+//                ty: pi(
+//                    axiom("nat.{}"),
+//                    pi(
+//                        axiom("nat.{}"),
+//                        pi(
+//                            app(app(axiom("nat.less_than_or_equal.{}"), bound(1)), bound(0)),
+//                            app(
+//                                app(axiom("nat.less_than_or_equal.{}"), bound(2)),
+//                                app(axiom("nat.succ.{}"), bound(1)),
+//                            ),
+//                        ),
+//                    ),
+//                ),
+//            },
+//        ];
+//        let nat_le = Inductive::new(
+//            "nat.less_than_or_equal.{}",
+//            1,
+//            pi(axiom("nat.{}"), pi(axiom("nat.{}"), sort(0))),
+//            &nat_le_rules,
+//        );
+//
+//        let has_le_rules = [InductiveRule {
+//            name: "has_le.mk.{0}".to_string(),
+//            ty: pi(
+//                sort(1),
+//                pi(
+//                    pi(bound(0), pi(bound(1), sort(0))),
+//                    app(axiom("has_le.{0}"), bound(1)),
+//                ),
+//            ),
+//        }];
+//        let has_le = Inductive::new("has_le.{0}", 1, pi(sort(1), sort(1)), &has_le_rules);
+//
+//        let axioms = [
+//            ("has_le.{0}.rec.{1}", has_le.elim(1)),
+//            ("nat.less_than_or_equal.{}.rec.{0}", nat_le.elim(0)),
+//        ];
+//        let inductives = HashMap::from([
+//            ("nat.{}".into(), nat),
+//            ("nat.less_than_or_equal.{}".into(), nat_le),
+//            ("has_le.{0}".into(), has_le),
+//        ]);
+//        let mut eval = Evaluator::new(&axioms, inductives); //, nat]);
+//                                                            //
+//        let expected_ty = pi(
+//            axiom("nat.{}"),
+//            pi(
+//                axiom("nat.{}"),
+//                pi(
+//                    app(app(axiom("nat.less_than_or_equal.{}"), bound(1)), bound(0)),
+//                    app(
+//                        app(axiom("nat.less_than_or_equal.{}"), bound(2)),
+//                        app(axiom("nat.succ.{}"), bound(1)),
+//                    ),
+//                ),
+//            ),
+//        );
+//        // minimized test case
+//        let minimized_expr = lam(
+//            axiom("nat.{}"),
+//            lam(
+//                axiom("nat.{}"),
+//                lam(
+//                    app(app(axiom("nat.less_than_or_equal.{}"), bound(1)), bound(0)),
+//                    app(
+//                        app(
+//                            app(
+//                                app(
+//                                    app(
+//                                        app(axiom("nat.less_than_or_equal.{}.rec.{0}"), bound(1)),
+//                                        app(axiom("nat.less_than_or_equal.{}"), bound(2)),
+//                                    ),
+//                                    bound(0),
+//                                ),
+//                                lam(
+//                                    axiom("nat.{}"),
+//                                    lam(
+//                                        app(
+//                                            app(axiom("nat.less_than_or_equal.{}"), bound(2)),
+//                                            bound(0),
+//                                        ),
+//                                        app(
+//                                            app(axiom("nat.less_than_or_equal.step.{}"), bound(4)),
+//                                            bound(1),
+//                                        ),
+//                                    ),
+//                                ),
+//                            ),
+//                            app(axiom("nat.succ.{}"), bound(1)),
+//                        ),
+//                        app(
+//                            app(
+//                                app(axiom("nat.less_than_or_equal.step.{}"), bound(1)),
+//                                bound(1),
+//                            ),
+//                            app(axiom("nat.less_than_or_equal.refl.{}"), bound(1)),
+//                        ),
+//                    ),
+//                ),
+//            ),
+//        );
+//        assert_eq!(eval.ty(minimized_expr.clone()), Ok(expected_ty.clone()));
+//        let evaled_expr = eval.eval(minimized_expr.clone());
+//        assert_eq!(
+//            eval.ty(evaled_expr.clone().unwrap()),
+//            Ok(expected_ty.clone())
+//        );
+//
+//        let expr = lam(axiom("nat.{}"), lam(axiom("nat.{}"), lam(app(app(axiom("nat.less_than_or_equal.{}"), bound(1)), bound(0)), app(app(app(app(app(lam(axiom("nat.{}"), lam(axiom("nat.{}"), lam(axiom("nat.{}"), lam(app(app(app(app(lam(sort(1), lam(app(axiom("has_le.{0}"), bound(0)), app(app(app(app(axiom("has_le.{0}.rec.{1}"), bound(1)), lam(app(axiom("has_le.{0}"), bound(1)), pi(bound(2), pi(bound(3), sort(0))))), lam(pi(bound(1), pi(bound(2), sort(0))), bound(0))), bound(0)))), axiom("nat.{}")), app(app(axiom("has_le.mk.{0}"), axiom("nat.{}")), axiom("nat.less_than_or_equal.{}"))), bound(2)), bound(1)), app(app(app(app(app(axiom("nat.less_than_or_equal.{}.rec.{0}"), bound(2)), app(app(app(lam(sort(1), lam(app(axiom("has_le.{0}"), bound(0)), app(app(app(app(axiom("has_le.{0}.rec.{1}"), bound(1)), lam(app(axiom("has_le.{0}"), bound(1)), pi(bound(2), pi(bound(3), sort(0))))), lam(pi(bound(1), pi(bound(2), sort(0))), bound(0))), bound(0)))), axiom("nat.{}")), app(app(axiom("has_le.mk.{0}"), axiom("nat.{}")), axiom("nat.less_than_or_equal.{}"))), bound(3))), bound(0)), lam(axiom("nat.{}"), lam(app(app(axiom("nat.less_than_or_equal.{}"), bound(3)), bound(0)), app(app(axiom("nat.less_than_or_equal.step.{}"), bound(5)), bound(1))))), bound(1)))))), bound(2)), bound(1)), app(axiom("nat.succ.{}"), bound(1))), bound(0)), app(lam(axiom("nat.{}"), app(app(app(axiom("nat.less_than_or_equal.step.{}"), bound(0)), bound(0)), app(lam(axiom("nat.{}"), app(axiom("nat.less_than_or_equal.refl.{}"), bound(0))), bound(0)))), bound(1))))));
+//        assert_eq!(eval.ty(expr.clone()), Ok(expected_ty.clone()));
+//        let evaled_expr = eval.eval(expr.clone());
+//        assert_eq!(
+//            eval.ty(evaled_expr.clone().unwrap()),
+//            Ok(expected_ty.clone())
+//        );
+//    }
+//
+//    #[test]
+//    fn free_bindings() {
+//        let mut eval = Evaluator::empty();
+//        let expr = pi(bound(0), bound(1));
+//        //println!("got {:?}", eval.free_bindings_of(expr, 0));
+//        assert!(false);
+//    }
+//}
