@@ -24,7 +24,7 @@ pub fn imax(i: usize, j: usize) -> usize {
 pub struct EvaluationCache {
     cache: LruCache<(Term, u64), Term, fxhash::FxBuildHasher>,
     term_set: HConSet<Term>,
-    free_bindings_cache: HashMap<(Term, usize), HashSet<usize>>,
+    free_bindings_cache: HashMap<(Term, usize), HashSet<usize>, fxhash::FxBuildHasher>,
 }
 
 impl EvaluationCache {
@@ -35,7 +35,7 @@ impl EvaluationCache {
                 fxhash::FxBuildHasher::default(),
             ),
             term_set: HConSet::default(),
-            free_bindings_cache: HashMap::new(),
+            free_bindings_cache: HashMap::default(),
         }
     }
 
@@ -182,7 +182,7 @@ impl EvaluationCache {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Theorem {
     pub val: Term,
     pub ty: Term,
@@ -244,6 +244,7 @@ impl Theorem {
         let simplified_ty = eval
             .eval(self.ty.clone())
             .map_err(|e| format!("Simplify Type error: {}", e))?;
+        println!("def eq...");
         if !eval.def_equals(computed_ty.clone(), simplified_ty.clone()) {
             Err(format!(
                 "Theorem prove fail: Expected type: {:?} (simplified to {:?}) , Got type: {:?}",
@@ -781,16 +782,22 @@ impl Inductive {
             bound(minor_premise_args.len() + minor_premise_motive_args.len() + rule_index);
         let mut premise_body_apps = vec![motive_binding];
         // lift global params
+        //println!("rule body: {}", rule.ty.body());
+        //println!(
+        //    "rule_params.len() {}, total lift: {}",
+        //    rule_params.len(),
+        //    (minor_premise_motive_args.len() + rule_index + 1)
+        //);
         // TODO: do I need to separately lift global params? No right?
         let result_args = &eval
             .lift_inner(
                 rule.ty.body(),
-                (minor_premise_args.len() + minor_premise_motive_args.len() + rule_index + 1)
-                    as isize,
+                (minor_premise_motive_args.len() + rule_index + 1) as isize,
                 rule_params.len(),
                 //rule_params.len(),
             )
             .unwrap();
+        //println!("first lift: {}", result_args);
         let result_args = &eval
             .lift_inner(
                 result_args.clone(),
@@ -800,6 +807,7 @@ impl Inductive {
             )
             .unwrap()
             .app_args()[self.num_params..];
+        //println!("second lift: {:?}", result_args);
         //println!("got result args: {:?}", result_args);
         premise_body_apps.extend_from_slice(result_args);
 
@@ -1087,34 +1095,32 @@ impl std::fmt::Debug for TermData {
 
 impl std::fmt::Display for TermData {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
-        //match self {
-        //    TermData::Bound(index) => {
-        //        write!(fmt, "Bound({})", index)
-        //    }
-        //    TermData::Sort(level) => {
-        //        write!(fmt, "Sort({})", level)
-        //    }
-        //    TermData::Binding(BindingData { ty, domain, body }) => {
-        //        write!(fmt, "{:?}({}, {})", ty, domain, body)
-        //    }
-        //    TermData::App(f, e) => {
-        //        write!(fmt, "App({}, {})", f, e)
-        //    }
-        //    TermData::Ind(name) => {
-        //        write!(fmt, "Ind({})", name)
-        //    }
-        //    TermData::IndCtor(name, ctor) => {
-        //        write!(fmt, "IndCtor({}.{})", name, ctor)
-        //    }
-        //    TermData::IndRec(name, motive_sort) => {
-        //        write!(fmt, "IndRec({}, {})", name, motive_sort)
-        //    }
-        //    TermData::Axiom(name) => {
-        //        write!(fmt, "Axiom({})", name)
-        //    }
-        //}
-
-        Ok(())
+        match self {
+            TermData::Bound(index) => {
+                write!(fmt, "Bound({})", index)
+            }
+            TermData::Sort(level) => {
+                write!(fmt, "Sort({})", level)
+            }
+            TermData::Binding(BindingData { ty, domain, body }) => {
+                write!(fmt, "{:?}({}, {})", ty, domain, body)
+            }
+            TermData::App(f, e) => {
+                write!(fmt, "App({}, {})", f, e)
+            }
+            TermData::Ind(name) => {
+                write!(fmt, "Ind({})", name)
+            }
+            TermData::IndCtor(name, ctor) => {
+                write!(fmt, "IndCtor({}.{})", name, ctor)
+            }
+            TermData::IndRec(name, motive_sort) => {
+                write!(fmt, "IndRec({}, {})", name, motive_sort)
+            }
+            TermData::Axiom(name) => {
+                write!(fmt, "Axiom({})", name)
+            }
+        }
     }
 }
 
@@ -1883,6 +1889,7 @@ impl Evaluator {
     }
 
     pub fn def_equals_with_context(&mut self, a: Term, b: Term, context: &mut Context) -> bool {
+        //println!("trace def eq: {}\n==AND==\n{}", a, b);
         //println!("context def 1!: {:?}", context);
         // fast case
         if a == b {

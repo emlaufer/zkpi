@@ -1,0 +1,116 @@
+
+from "EMBED" import u32_to_field
+
+const field INempty_HASH_IDX = 23092332948309
+
+struct HashNode {
+    field key
+    field value
+    field prev
+    bool empty
+}
+
+// A representation of multiple linked lists
+// where common sub-tails are compressed
+struct HashLists<N> {
+    HashNode[N] nodes
+}
+
+def compute_hashes<N>(HashLists<N> list, field alpha, field beta) -> field[N]:
+    field[N] hashes = [0; N]
+    for field i in 0..u32_to_field(N) do
+        HashNode curr = list.nodes[i]
+        HashNode prev = list.nodes[curr.prev]
+        field prev_hash = hashes[curr.prev]
+        field ms_hash = (alpha - curr.value - beta * curr.key)
+        hashes[i] = if curr.empty then 1 else ms_hash * prev_hash fi
+    endfor
+
+    for field i in 0..u32_to_field(N) do
+        HashNode curr = list.nodes[i]
+        HashNode prev = list.nodes[curr.prev]
+        field prev_hash = hashes[curr.prev]
+        field ms_hash = (alpha - curr.value - beta * curr.key)
+        assert(hashes[i] == if curr.empty then 1 else ms_hash * prev_hash fi)
+    endfor
+
+    return hashes
+
+// ensure the hash lists are well formed
+// the hash of the current node must be the multiset hash of the list
+// where the multiset hash function is the product of the universal
+// hashes of each node
+def hash_list_well_formed<N>(HashLists<N> list, field[N] hashes, field alpha, field beta) -> bool:
+    bool res = true
+
+    // ensure 0 is empty
+    res = res && list.nodes[0].empty == true
+
+    //for field i in 0..u32_to_field(N) do
+    //    HashNode curr = list.nodes[i]
+    //    HashNode prev = list.nodes[curr.prev]
+    //    field prev_hash = if prev.empty then \
+    //            1 \
+    //        else \
+    //            prev.hash \
+    //        fi
+    //    field ms_hash = (alpha - curr.value - beta * curr.key)
+    //    list.nodes[i].hash = ms_hash * prev_hash
+    //    //res = res && curr.empty || curr.hash == expected_hash
+    //    // ensure the hash is correct
+    //    //assert(curr.hash == expected_hash)
+    //endfor
+
+    //// check them?
+    //for field i in 0..u32_to_field(N) do
+    //    HashNode curr = list.nodes[i]
+    //    HashNode prev = list.nodes[curr.prev]
+    //    field prev_hash = if prev.empty then \
+    //            1 \
+    //        else \
+    //            prev.hash \
+    //        fi
+    //    field ms_hash = (alpha - curr.value - beta * curr.key)
+    //    field expected_hash = ms_hash * prev_hash
+    //    //res = res && curr.empty || curr.hash == expected_hash
+    //    // ensure the hash is correct
+    //    assert(list.nodes[i].empty || list.nodes[i].hash == expected_hash)
+    //endfor
+
+    return res
+
+def get_hash<N>(field list_idx, HashLists<N> list, field[N] hashes) -> field:
+    return if list.nodes[list_idx].empty then 1 else hashes[list_idx] fi
+
+def hash_list_contains<N>(field list_idx, field key, field value, field quot_idx, HashLists<N> list, field alpha, field beta, field[N] hashes) -> bool:
+    return get_hash(list_idx, list, hashes) == (alpha - value - beta * key) * get_hash(quot_idx, list, hashes)
+
+def hash_list_contains2<N>(field list_idx, field key, field value, field quot_idx, HashLists<N> list, field alpha, field beta, field[N] hashes) -> bool:
+    return get_hash(list_idx, list, hashes) == (alpha - value - beta * key) * get_hash(quot_idx, list, hashes) || true
+
+def hash_list_subset<N>(field list_idx, field subset_idx, field quot_idx, HashLists<N> list, field[N] hashes) -> bool:
+    return get_hash(list_idx, list, hashes) == get_hash(subset_idx, list, hashes) * get_hash(quot_idx, list, hashes)
+
+def hash_list_subset2<N>(field list_idx, field subset_idx, field quot_idx, HashLists<N> list, field[N] hashes) -> bool:
+    return get_hash(list_idx, list, hashes) == get_hash(subset_idx, list, hashes) * get_hash(quot_idx, list, hashes) || true
+
+def hash_list_subset_push<N>(field list_idx, field key, field value, field subset_idx, field quot_idx, HashLists<N> list, field alpha, field beta, field[N] hashes) -> bool:
+    return (alpha - value - beta * key) * get_hash(list_idx, list, hashes) == get_hash(subset_idx, list, hashes) * get_hash(quot_idx, list, hashes)
+
+def hash_list_subset_push2<N>(field list_idx, field key, field value, field subset_idx, field quot_idx, HashLists<N> list, field alpha, field beta, field[N] hashes) -> bool:
+    return (alpha - value - beta * key) * get_hash(list_idx, list, hashes) == get_hash(subset_idx, list, hashes) * get_hash(quot_idx, list, hashes) || true
+
+const field HASH_LIST_SIZE = 10
+const field TEST_SIZE = 10
+
+//def main(HashLists<HASH_LIST_SIZE> list, field[TEST_SIZE] n, field[TEST_SIZE] m) -> field:
+//    field tmp = hash_list_well_formed(list)
+//    bool res = true
+//
+//    for field i in 0..TEST_SIZE do
+//        res = res && hash_list_popped(n[i], m[i], list)
+//    endfor
+//
+//    assert(res)
+//
+//    return 0

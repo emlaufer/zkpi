@@ -2,11 +2,16 @@
 #![feature(let_chains)]
 #![recursion_limit = "100000000000"]
 
+use rlimit::{setrlimit, Resource, INFINITY};
 use std::collections::{BTreeMap, HashMap};
 use std::env;
 use std::fs::File;
 use std::io;
 use std::io::prelude::*;
+use std::path::PathBuf;
+
+use structopt::clap::arg_enum;
+use structopt::StructOpt;
 
 mod lean;
 //mod lru;
@@ -14,26 +19,54 @@ mod phony_rec;
 mod term;
 mod zk;
 
+#[derive(Debug, StructOpt)]
+struct Options {
+    /// Input file
+    #[structopt(parse(from_os_str), name = "PATH")]
+    path: PathBuf,
+
+    #[structopt(name = "COMMAND")]
+    command: Command,
+
+    #[structopt()]
+    theorem: Option<String>,
+
+    #[structopt(long, use_delimiter = true)]
+    sizes: Option<Vec<usize>>,
+}
+
+arg_enum! {
+    #[derive(PartialEq, Eq, Debug)]
+    pub enum Command {
+        Prove,
+        Sim,
+        Export,
+        Count,
+        List,
+    }
+}
+
 // TODO: make non-io error...
 fn main() -> io::Result<()> {
     env_logger::init();
 
-    let args: Vec<String> = env::args().collect();
-    if args.len() < 2 || args.len() > 3 {
-        println!("Usage: crabpi [lean.out] [name]");
-        return Ok(());
-    }
+    let options = Options::from_args();
+    let path_buf = options.path.clone();
 
-    let mut file = File::open(&args[1])?;
+    let res = setrlimit(Resource::STACK, INFINITY, INFINITY);
+    //println!("got: {:?}", res);
+    //panic!("");
+    //
+    let mut file = File::open(options.path)?;
     let mut buf = Vec::new();
     file.read_to_end(&mut buf);
     let mut encoding = lean::LeanEncoding::parse(std::str::from_utf8(&buf).unwrap()).unwrap();
 
-    println!("got: {:?}", encoding.theorem_names());
+    println!("names: {:?}", encoding.theorem_names());
     let names = encoding.theorem_names();
     let mut size_cache = Some(hashconsing::hash_coll::HConMap::default());
     let mut term_cache = Some(HashMap::new());
-    //let mut smallest = vec![];
+    let mut smallest = vec![];
     let mut failed_to_export = 0;
     let mut fails = vec![];
     let mut failed_sim: Vec<String> = vec![];
@@ -41,63 +74,119 @@ fn main() -> io::Result<()> {
     // number of theorem that use quot
     let mut num_quot = 0;
 
-    if let Some(definition_name) = args.get(2) {
+    if matches!(options.command, Command::List) {
+        for (i, name) in names.iter().enumerate() {
+            let mut inductives = HashMap::new();
+            let mut axioms = HashMap::new();
+            //27269/97903
+            //for (i, name) in names.iter().enumerate() {
+            //println!("[{}/{}] Exporting: {}", i, names.len(), name);
+            match encoding.export_theorem(&name, &mut axioms, &mut inductives, &mut term_cache) {
+                Ok(theorem) => {
+                    println!("[{}/{}] Getting: {}", i, names.len(), name);
+                    let size = theorem.size(&mut size_cache);
+                    println!("...size {}", size);
+                    smallest.push((name, size));
+                }
+                Err(err) => {
+                    if err.contains("quot") {
+                        num_quot += 1;
+                    }
+                    println!("Failed to export {}: {}", name, err);
+                    failed_to_export += 1;
+                }
+            }
+        }
+
+        println!("PRINTING:");
+        // print them comma separated
+        smallest.sort_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap());
+
+        for (name, size) in smallest {
+            println!("{},{}", name, size);
+        }
+        return Ok(());
+    }
+
+    if let Some(definition_name) = options.theorem {
         let mut inductives = HashMap::new();
         let mut axioms = HashMap::new();
         let exported = encoding
             .export_theorem(
-                definition_name,
+                &definition_name,
                 &mut axioms,
                 &mut inductives,
                 &mut term_cache,
             )
             .unwrap();
-        println!(
-            "proving theorem {}... (estimated size {})",
-            definition_name,
-            exported.size(&mut size_cache)
-        );
-        exported.prove().unwrap();
-        println!("Proven!");
-        //println!("doing zk sim...");
-        //println!("exported inds: {:?}", exported);
-        //let sim_res = zk::Exporter::simulate(exported);
-        //if sim_res.is_ok() {
-        //    println!("proven in sim!");
-        //} else {
-        //    println!("failed in sim!, got {:?}", sim_res);
-        //};
-    } else {
-        //for (i, name) in names.iter().enumerate() {
-        //    let mut inductives = HashMap::new();
-        //    let mut axioms = HashMap::new();
-        //    //27269/97903
-        //    //for (i, name) in names.iter().enumerate() {
-        //    println!("[{}/{}] Exporting: {}", i, names.len(), name);
-        //    match encoding.export_theorem(&name, &mut axioms, &mut inductives, &mut term_cache) {
-        //        Ok(theorem) => {
-        //            //println!("[{}/{}] Getting: {}", i, names.len(), name);
-        //            let size = theorem.size(&mut size_cache);
-        //            println!("...size {}", size);
-        //            smallest.push((name, size));
-        //        }
-        //        Err(err) => {
-        //            if err.contains("quot") {
-        //                num_quot += 1;
-        //            }
-        //            println!("Failed to export {}: {}", name, err);
-        //            failed_to_export += 1;
-        //        }
-        //    }
-        //}
+        //println!(
+        //    "proving theorem {}... (estimated size {})",
+        //    definition_name,
+        //    exported.size(&mut size_cache)
+        //);
 
-        //smallest.sort_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap());
+        match options.command {
+            Command::Prove => exported.prove().unwrap(),
+            Command::Sim => {
+                zk::Exporter::simulate(exported.clone()).unwrap();
+                println!("Success!");
+            }
+            Command::Export => {
+                println!("GOT: {:?}", options.sizes);
+                println!("{}", zk::Exporter::export_string(exported.clone()).unwrap());
+            }
+            Command::Count => {
+                let zk_in = zk::Exporter::export(exported.clone()).unwrap();
+                println!(
+                    "{},{},{},{},{},{},{},{},{} (AXIOMS {})",
+                    zk_in.rules.len(),
+                    zk_in.terms.len(),
+                    zk_in.contexts.nodes.len(),
+                    zk_in.lifts.len(),
+                    zk_in.inductives.len(),
+                    zk_in.public_terms.len(),
+                    zk_in.ind_rules.nodes.len(),
+                    zk_in.ind_nnrs.nodes.len(),
+                    zk_in.ind_nrs.nodes.len(),
+                    zk_in.axioms.len(),
+                );
+            }
+            Command::List => {
+                panic!("Cannot list with specific theorem")
+            }
+        }
+        return Ok(());
+    } else {
+        for (i, name) in names.iter().enumerate() {
+            let mut inductives = HashMap::new();
+            let mut axioms = HashMap::new();
+            //27269/97903
+            //for (i, name) in names.iter().enumerate() {
+            println!("[{}/{}] Exporting: {}", i, names.len(), name);
+            match encoding.export_theorem(&name, &mut axioms, &mut inductives, &mut term_cache) {
+                Ok(theorem) => {
+                    //println!("[{}/{}] Getting: {}", i, names.len(), name);
+                    let size = theorem.size(&mut size_cache);
+                    println!("...size {}", size);
+                    smallest.push((name, size));
+                }
+                Err(err) => {
+                    if err.contains("quot") {
+                        num_quot += 1;
+                    }
+                    println!("Failed to export {}: {}", name, err);
+                    failed_to_export += 1;
+                }
+            }
+        }
+
+        smallest.sort_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap());
         //println!("sorted: {:?}", &smallest[..]);
 
         let mut skipped_typing_eval_elim = 0;
         let mut skipped_simplify_eval_elim = 0;
         // prove theorems one by one...
-        for (i, name) in names.iter().enumerate() {
+        for (i, (name, size)) in smallest.iter().enumerate() {
             let mut inductives = HashMap::new();
             let mut axioms = HashMap::new();
             // skip ones that are just very large constants...
@@ -122,13 +211,7 @@ fn main() -> io::Result<()> {
                 //if !name.starts_with("mz") {
                 //    continue;
                 //}
-                println!(
-                    "[{}/{}] Proving: {}, size: {}",
-                    i,
-                    names.len(),
-                    name,
-                    0 //size
-                );
+                println!("[{}/{}] Proving: {}, size: {}", i, names.len(), name, size);
                 //println!("term: {:?} :: {:?}", theorem.val, theorem.ty);
                 //println!("theorem: {:?}", theorem);
                 if let Err(e) = theorem.prove() {
@@ -149,8 +232,8 @@ fn main() -> io::Result<()> {
                     }
                 }
                 println!("proven!");
-                //println!("doing zk sim...");
-                //let sim_res = zk::Exporter::simulate(theorem);
+                println!("doing zk sim...");
+                let sim_res = zk::Exporter::simulate(theorem).unwrap();
                 //if sim_res.is_ok() {
                 //    println!("proven in sim!");
                 //} else {
@@ -185,28 +268,6 @@ fn main() -> io::Result<()> {
         println!("failed sim: {:?}", failed_sim);
         println!("quots: {:?}", num_quot);
     }
-
-    //let mut axioms = BTreeMap::new();
-    //let mut inductives = HashMap::new();
-    //let exported = encoding
-    //    .export_theorem("nat.le_succ_of_le", &mut axioms, &mut inductives, &mut None)
-    //    //.export_theorem("nat.find_x", &mut axioms, &mut inductives, &mut None)
-    //    .unwrap();
-
-    //println!("inductives: {:?}", inductives);
-    //println!("axioms: {:?}", inductives);
-
-    //// TODO: And comm doesn't prove properly, some issue
-    ////       Might be due to universe params and or non-prop motive on and.rec?
-    ////let exported = encoding
-    ////    .export_theorem("and.comm", &mut axioms, &mut inductives)
-    ////    .unwrap();
-    ////println!("got: {:?}", exported);
-    ////println!("axioms: {:?}", axioms);
-    ////println!("inductives: {:?}", inductives);
-    //println!("proving...");
-    //exported.prove().unwrap();
-    //println!("Proven!");
 
     Ok(())
 }

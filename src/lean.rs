@@ -439,7 +439,7 @@ impl LeanEncoding {
                 }
                 //println!("instr: {:?}", instr);
             } else {
-                println!("bad parse, skipping: {:?}", line);
+                debug!("bad parse, skipping: {:?}", line);
             }
         }
 

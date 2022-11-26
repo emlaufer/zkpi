@@ -1,0 +1,934 @@
+//const field PROOF_SIZE = 20
+//const u32 NUM_PUBLIC_TERMS = 1
+//const field NUM_TERMS = 10
+//const u32 NUM_AXIOMS = 1
+//const u32 CONTEXT_SIZE = 100
+//
+//// Node in the type inference tree
+//// Some terminology notes:
+////  - Some overloading here:
+////  - Eval e => e':
+////      - input_term_idx == e
+////      - result_term_idx == e'
+////  - type e :: t:
+////      - input_term_idx == e
+////      - result_term_idx == t
+////      1. In this case, the result term is e'
+////      2. TODO: May need to represent e as a parent of e' here
+//// Maybe change name to "Rule" or something
+//struct Node {
+//    field ctx_idx
+//    field num_lifts
+//    field num_local_bindings
+//    field rule
+//    //u32[4] parents     // antecedents necessary for this rule to be true
+//    field parent0
+//    field parent1
+//    field parent2
+//    field parent3
+//    field input_term_idx     // the term that is being evaluated
+//    field result_term_idx    // the term that is the result of the rule
+//    field test
+//}
+//
+//struct Term {
+//    // Conventions:
+//    // Var i => Term { EXPR_VAR, i, _ }
+//    // App f e => Term { EXPR_APP, f, e }
+//    // Lam b => Term { EXPR_LAM, _, b } -- TODO: maybe change for consistency
+//    // Pi p.p' => Term { EXPR_PI, p, p' }
+//    field simple_term
+//    // indices into the types array for the children
+//    field left_idx
+//    field right_idx
+//
+//    field top_level_func
+//}
+//
+//const field RULE_NULL = 0
+//
+//// evaluation rules
+//const field RULE_EVAL_ID = 1
+//const field RULE_EVAL_VAR = 2
+//const field RULE_EVAL_SORT = 3 // TODO: unused
+//const field RULE_EVAL_APP = 4
+//const field RULE_EVAL_APP_LAM = 5
+//const field RULE_EVAL_APP_PI = 6
+//const field RULE_EVAL_LAM = 7
+//const field RULE_EVAL_PI = 8
+//const field RULE_EVAL_AX = 9
+//
+//const field RULE_TYPE_VAR = 10
+//const field RULE_TYPE_SORT = 11
+//const field RULE_TYPE_APP = 12
+//const field RULE_TYPE_LAM = 13
+//const field RULE_TYPE_PI = 14
+//const field RULE_TYPE_AX = 15
+//
+//const field RULE_LIFT = 16
+//const field RULE_UNLIFT = 17
+//
+//def is_eval_rule(field rule) -> bool:
+//    //return rule >= 1 && rule < 10
+//    return rule == 1 || rule == 2 || rule == 3 || rule == 4 || rule == 5 || rule == 6 || rule == 7 || rule == 8 || rule == 9
+//    //return (rule - 1) * (rule - 2) * (rule - 3) * (rule - 4) * (rule - 5) * (rule - 6) * (rule - 7) * (rule - 8) * (rule - 9) == 0
+//
+//def is_type_rule(field rule) -> bool:
+//    //return rule >= 10 && rule < 16
+//    return rule == 10 || rule == 11 || rule == 12 || rule == 13 || rule == 14 || rule == 15
+//
+//// typing rules
+//// TODO
+//
+//// base terms / types
+//const field EXPR_NULL = 0
+//const field EXPR_VAR = 1
+//const field EXPR_SORT = 2
+//const field EXPR_APP = 3
+//const field EXPR_LAM = 4
+//const field EXPR_PI = 5
+//const field EXPR_AX = 6
+//
+//// magic constants
+//const field INVALID_IDX = 20193094
+//
+//def null_term() -> Term:
+//    return Term { simple_term: EXPR_NULL, left_idx: 0, right_idx: 0, top_level_func: 0, }
+//
+//////def null_node() -> Node:
+////    //return Node { ctx_idx: INVALID_IDX, rule: RULE_NULL, num_lifts: 0, num_local_bindings: 0, parent0: 0, parent1: 0, parent2: 0, parent3: 0, input_term_idx: 0, result_term_idx: 0 }
+////
+////def lookup_term<T>(u32 idx, Term[T] terms) -> Term:
+////    Term t = null_term()
+////    for u32 i in 0..T do
+////        t = if i == idx then terms[i] else t fi
+////    endfor
+////    return t
+////
+//////def lookup_node<N>(u32 idx, Node[N] proof) -> Node:
+//////    Node n = null_node()
+//////    for u32 i in 0..N do
+//////        n = if i == idx then proof[i] else n fi
+//////    endfor
+//////    return n
+////
+////def lookup_ax<A>(u32 index, u32[A] axioms) -> u32:
+////    u32 n = INVALID_IDX
+////    for u32 i in 0..A do
+////        n = if i == index then axioms[i] else n fi
+////    endfor
+////    return n
+////
+//def max(field u, field v) -> field:
+//    return if u > v then u else v fi
+//
+//def imax(field u, field v) -> field:
+//    return if v == 0 then 0 else max(u, v) fi
+//
+//// Ensures a null rule is can't be used to write fake proofs
+//// Currently, just ensures all fields are 0.
+//// TODO: This doesn't actually work, because "0" is a valid value. 
+////       we really need to use a sentinal value for indices that is
+////       never used, like 0xffffffff
+//def check_null<N, T>(Node node, Node[N] proof, Term[T] terms) -> bool:
+//// TODO: rewrite
+//    bool res = true
+//    res = res && node.ctx_idx == INVALID_IDX
+//    res = res && node.rule == 0
+//    res = res && node.parent0 == 0
+//    res = res && node.parent1 == 0
+//    res = res && node.parent2 == 0
+//    res = res && node.parent3 == 0
+//    res = res && node.input_term_idx == 0
+//    res = res && node.result_term_idx == 0
+//    return res
+//
+//// Returns OK if (lift(input, num_lifts) == result) is valid
+//def check_lifts<N, T>(Node node, Node[N] proof, Term[T] terms) -> bool:
+//    bool type_same_ok = true
+//    bool var_ok = true
+//    bool sort_ok = true
+//    bool recursive_ok = true // for lam, pi, and app makes sure parents check lift of children
+//    bool app_ok = true
+//    bool lams_ok = true
+//    bool pis_ok = true
+//    //bool ax_ok = true TODO axioms
+//    Node parent0 = proof[node.parent0]
+//    Node parent1 = proof[node.parent1]
+//
+//    Term input_term = terms[node.input_term_idx]
+//    Term result_term = terms[node.result_term_idx]
+//    // 1. input and result need to have the same form
+//    type_same_ok = input_term.simple_term == result_term.simple_term
+//
+//    // TODO: put back below the if statement
+//                //if input_term.left_idx >= node.num_local_bindings then\
+//                //    input_term.left_idx + node.num_lifts == result_term.left_idx\
+//                //else\
+//                //    input_term.left_idx == result_term.left_idx\
+//                //fi\
+//    // TODO: need to check that idx is greater I believe?
+//    var_ok = if input_term.simple_term == EXPR_VAR then\
+//                input_term.left_idx == result_term.left_idx\
+//             else true fi
+//    sort_ok = if input_term.simple_term == EXPR_SORT then input_term.left_idx == result_term.left_idx else true fi
+//    // lams, we increment num_local_bindings in the parent for the body
+//    lams_ok = if input_term.simple_term == EXPR_LAM then\
+//                parent0.rule == RULE_LIFT &&\
+//                parent0.input_term_idx == input_term.left_idx &&\
+//                parent0.result_term_idx == result_term.left_idx &&\
+//                parent0.num_lifts == node.num_lifts &&\
+//                parent0.num_local_bindings == node.num_local_bindings + 1\
+//            else true fi
+//    recursive_ok = if input_term.simple_term == EXPR_APP || input_term.simple_term == EXPR_PI then \
+//                parent0.rule == RULE_LIFT &&\
+//                parent1.rule == RULE_LIFT &&\
+//                parent0.input_term_idx == input_term.left_idx &&\
+//                parent0.result_term_idx == result_term.left_idx &&\
+//                parent1.input_term_idx == input_term.right_idx &&\
+//                parent1.result_term_idx == result_term.right_idx\
+//            else true fi
+//    // for app, we need to make sure parents are lifting the same amount
+//    // and have same number of local bindings
+//    app_ok = if input_term.simple_term == EXPR_APP then\
+//                parent0.num_lifts == node.num_lifts &&\
+//                parent1.num_lifts == node.num_lifts &&\
+//                parent0.num_local_bindings == node.num_local_bindings &&\
+//                parent1.num_local_bindings == node.num_local_bindings\
+//            else true fi
+//    // for lams and pis, we add a binding so we ensure num local bindings is incremented correctly
+//    pis_ok = if input_term.simple_term == EXPR_PI then\
+//                parent0.num_lifts == node.num_lifts &&\
+//                parent1.num_lifts == node.num_lifts &&\
+//                parent0.num_local_bindings == node.num_local_bindings &&\
+//                parent1.num_local_bindings == node.num_local_bindings + 1\
+//            else true fi
+//    return type_same_ok && var_ok && sort_ok && recursive_ok && app_ok && lams_ok && pis_ok
+//
+//// Returns OK if (unlift(input) == result) is valid
+//// Basically same as lift but inverted, and we only ever do 1 at a time (due to substitution happening at max once per rule)
+//def check_unlifts<N, T>(Node node, Node[N] proof, Term[T] terms) -> bool:
+//    bool type_same_ok = true
+//    bool var_ok = true
+//    bool sort_ok = true
+//    bool recursive_ok = true // for lam, pi, and app makes sure parents check lift of children
+//    bool app_ok = true
+//    bool lams_ok = true
+//    bool pis_ok = true
+//    //bool ax_ok = true TODO axioms
+//    Node parent0 = proof[node.parent0]
+//    Node parent1 = proof[node.parent1]
+//
+//    Term input_term = terms[node.input_term_idx]
+//    Term result_term = terms[node.result_term_idx]
+//    // 1. input and result need to have the same form
+//    type_same_ok = input_term.simple_term == result_term.simple_term
+//
+//    // TODO put back
+//                //if input_term.left_idx > node.num_local_bindings then\
+//                //    input_term.left_idx - 1 == result_term.left_idx\
+//                //else\
+//                //    input_term.left_idx == result_term.left_idx\
+//                //fi\
+//    // TODO: need to check that idx is greater I believe?
+//    var_ok = if input_term.simple_term == EXPR_VAR then\
+//                    input_term.left_idx == result_term.left_idx\
+//             else true fi
+//    sort_ok = if input_term.simple_term == EXPR_SORT then input_term.left_idx == result_term.left_idx else true fi
+//    lams_ok = if input_term.simple_term == EXPR_LAM then\
+//                parent0.rule == RULE_UNLIFT &&\
+//                parent0.input_term_idx == input_term.left_idx &&\
+//                parent0.result_term_idx == result_term.left_idx &&\
+//                parent0.num_lifts == node.num_lifts &&\
+//                parent0.num_local_bindings == node.num_local_bindings + 1\
+//            else true fi
+//    recursive_ok = if input_term.simple_term == EXPR_APP || input_term.simple_term == EXPR_PI then \
+//                parent0.rule == RULE_UNLIFT &&\
+//                parent1.rule == RULE_UNLIFT &&\
+//                parent0.input_term_idx == input_term.left_idx &&\
+//                parent0.result_term_idx == result_term.left_idx &&\
+//                parent1.input_term_idx == input_term.right_idx &&\
+//                parent1.result_term_idx == result_term.right_idx\
+//            else true fi
+//    // for app, we need to make sure parents are lifting the same amount
+//    // and have same number of local bindings
+//    app_ok = if input_term.simple_term == EXPR_APP then\
+//                parent0.num_lifts == node.num_lifts &&\
+//                parent1.num_lifts == node.num_lifts &&\
+//                parent0.num_local_bindings == node.num_local_bindings &&\
+//                parent1.num_local_bindings == node.num_local_bindings\
+//            else true fi
+//    // for lams and pis, we add a binding so we ensure num local bindings is incremented correctly
+//    pis_ok = if input_term.simple_term == EXPR_PI then\
+//                parent0.num_lifts == node.num_lifts &&\
+//                parent1.num_lifts == node.num_lifts &&\
+//                parent0.num_local_bindings == node.num_local_bindings &&\
+//                parent1.num_local_bindings == node.num_local_bindings + 1\
+//            else true fi
+//    return type_same_ok && var_ok && sort_ok && recursive_ok && app_ok && lams_ok && pis_ok
+//
+//// ============================================================================
+////
+//// ----------------------------------------------------
+////        (C,l) |- e => e
+////
+//// ============================================================================
+//def check_eval_id<N, T>(Node node, Node[N] proof, Term[T] terms) -> bool:
+//    bool res = true
+//    res = res && node.input_term_idx == node.result_term_idx
+//    return res
+//
+//// ============================================================================
+////   i >= l && lookup(C, i - l) = e && lift(e, e', l)
+//// ----------------------------------------------------
+////        (C,l) |- Var i => e'
+////
+//// ============================================================================
+//def check_eval_var<N, T, C>(Node node, Node[N] proof, Term[T] terms, HashLists<C> context) -> bool:
+//    bool res = true
+//    //bool ax_ok = true TODO axioms
+//    //Node parent0 = proof[node.parent0] // lift correct
+//
+//    //Term input_term = terms[node.input_term_idx]
+//    //Term result_term = terms[node.result_term_idx]
+//
+//    //// ensure lookup is correct
+//    //res = res && input_term.simple_term == EXPR_VAR
+//    //res = res && input_term.left_idx >= node.num_lifts
+//    //field ctx_term_idx = context[node.ctx_idx + input_term.left_idx - node.num_lifts]
+//
+//    //// ensure lift is correct
+//    //res = res && parent0.rule == RULE_LIFT
+//    //res = res && parent0.input_term_idx == ctx_term_idx
+//    //res = res && parent0.result_term_idx == node.result_term_idx
+//    //res = res && parent0.num_lifts == node.num_lifts
+//    //res = res && parent0.num_local_bindings == 0
+//
+//    return res
+//
+//
+////// ============================================================================
+//////  p => t           p' => t'
+////// ---------------------------------
+//////  pi x: p -> p' => pi x: t -> t'
+//////
+////// ============================================================================
+//// TODO: might have some context weirdness e.g. we aren't including blank entries like in haskell one
+//def check_eval_pi<N, T, C>(Node node, Node[N] proof, Term[T] terms, HashLists<C> context) -> bool:
+//    bool res = true
+//    Term input_term = terms[node.input_term_idx]
+//    Term result_term = terms[node.result_term_idx]
+//    Node parent0 = proof[node.parent0]
+//    Node parent1 = proof[node.parent1]
+//
+//    // get info from result pi type, and ensure well formedness
+//    res = res && result_term.simple_term == EXPR_PI
+//    res = res && is_eval_rule(parent0.rule)
+//    field pi_p_idx = input_term.left_idx
+//    field pi_pp_idx = input_term.right_idx
+//
+//    // get info from result pi type, and ensure well formedness
+//    res = res && result_term.simple_term == EXPR_PI
+//    res = res && is_eval_rule(parent1.rule)
+//    field pi_t_idx = result_term.left_idx
+//    field pi_tp_idx = result_term.right_idx
+//
+//    // get info from the parent0 rule
+//    field parent0_p_idx = parent0.input_term_idx
+//    field parent0_t_idx = parent0.result_term_idx
+//
+//    // get info from the parent1 rule
+//    field parent1_pp_idx = parent1.input_term_idx
+//    field parent1_tp_idx = parent1.result_term_idx
+//
+//    // no lift in type
+//    res = res && parent0.num_lifts == node.num_lifts
+//    // lift in body
+//    res = res && parent1.num_lifts == node.num_lifts + 1
+//
+//    // TODO: might need "blank" binding
+//    // ensure contexts the same
+//    res = res && hash_list_permutation(node.ctx_idx, parent0.ctx_idx, context)
+//    res = res && hash_list_permutation(node.ctx_idx, parent1.ctx_idx, context)
+//
+//
+//    // check rules
+//    res = res && parent0_t_idx == pi_t_idx
+//    res = res && parent0_p_idx == pi_p_idx
+//    res = res && parent1_pp_idx == pi_pp_idx
+//    res = res && parent1_tp_idx == pi_tp_idx
+//
+//    return res
+//
+//// TODO: can we reduce constraints by combining with pi rule?
+//// ============================================================================
+////      e => v
+//// ---------------------------------
+////  \x -> e => \x -> v
+//// ============================================================================
+//def check_eval_lam<N, T, C>(Node node, Node[N] proof, Term[T] terms, HashLists<C> context) -> bool:
+//    bool res = true
+//    Term input_term = terms[node.input_term_idx]
+//    Term result_term = terms[node.result_term_idx]
+//    Node parent0 = proof[node.parent0]
+//
+//    res = res && is_eval_rule(parent0.rule)
+//
+//    field parent0_e_idx = parent0.input_term_idx
+//    field parent0_v_idx = parent0.result_term_idx
+//
+//    field node_e_idx = input_term.right_idx
+//    field node_v_idx = result_term.right_idx
+//
+//    // lift in body
+//    res = res && parent0.num_lifts == node.num_lifts + 1
+//    // TODO: might need "blank" binding?
+//    // ensure contexts the same
+//    res = res && hash_list_permutation(node.ctx_idx, parent0.ctx_idx, context)
+//
+//    res = res && input_term.simple_term == EXPR_LAM
+//    res = res && result_term.simple_term == EXPR_LAM
+//    res = res && parent0_e_idx == node_e_idx
+//    res = res && parent0_v_idx == node_v_idx
+//
+//    return res
+//
+//// TODO: combine app pi and app lam into single rule
+//// ============================================================================ 
+////  C: f => Pi t.v      e:C, v => v'
+////  ---------------------------------------------
+////    C: f e => v'
+////
+//// TODO: we have no distiction between terms and values...
+////       do we need them? I don't think it should hurt correctness
+//// ============================================================================
+//def check_eval_app_pi<N, T, C>(Node node, Node[N] proof, Term[T] terms, HashLists<C> context) -> bool:
+//    // TODO: same as eval app lam -> merge into single rule?
+//    bool res = true
+//    Node parent0 = proof[node.parent0]
+//    Node parent1 = proof[node.parent1]
+//
+//    // consequent is correct
+//    Term input_term = terms[node.input_term_idx]
+//    Term result_term = terms[node.result_term_idx]
+//
+//    field node_f_idx = input_term.left_idx
+//    field node_e_idx = input_term.right_idx
+//    field node_vp_idx = node.result_term_idx
+//
+//    res = res && input_term.simple_term == EXPR_APP
+//
+//    // parent 0 is correct
+//    res = res && is_eval_rule(parent0.rule)
+//    Term parent0_result_term = terms[parent0.result_term_idx]
+//
+//    field parent0_f_idx = parent0.input_term_idx
+//    field parent0_v_idx = parent0_result_term.right_idx
+//
+//    // parent0 is a pi and has same ctx as this node
+//    res = res && parent0_result_term.simple_term == EXPR_PI
+//    res = res && hash_list_permutation(node.ctx_idx, parent0.ctx_idx, context)
+//
+//    // parent 1 is correct
+//    res = res && is_eval_rule(parent1.rule)
+//    field parent1_v_idx = parent1.input_term_idx
+//    field parent1_vp_idx = parent1.result_term_idx
+//
+//    // ensure parent1 context is current node Ctx with an extra elem in front
+//    // TODO: Fix
+//    res = res && hash_list_popped(parent1.ctx_idx, node.ctx_idx, context)
+//    field parent1_e_idx = context.nodes[parent1.ctx_idx].value
+//
+//    res = res && parent0.num_lifts == node.num_lifts
+//    res = res && parent0.num_lifts == node.num_lifts
+//
+//    // ensure parent 1 resents lifts
+//    res = res && parent1.num_lifts == 0
+//    res = res && parent1.num_local_bindings == 0
+//
+//    // enforce rules
+//    res = res && node_f_idx == parent0_f_idx
+//    res = res && node_e_idx == parent1_e_idx
+//    res = res && parent0_v_idx == parent1_v_idx
+//    res = res && parent1_vp_idx == node_vp_idx
+//    return res
+//
+//// ============================================================================
+//// C: f => \ -> v      e:C, v => v'
+//// ---------------------------------------------
+////                C: f e => vp
+////
+//// TODO: we have no distiction between terms and values...
+////       do we need them? I don't think it should hurt correctness
+//// ============================================================================
+//def check_eval_app_lam<N, T, C>(Node node, Node[N] proof, Term[T] terms, HashLists<C> context) -> bool:
+//    bool res = true
+//    Node parent0 = proof[node.parent0]
+//    Node parent1 = proof[node.parent1]
+//
+//    // consequent is correct
+//    //Term input_term = terms[node.input_term_idx]
+//    //Term result_term = terms[node.result_term_idx]
+//
+//    //field node_f_idx = input_term.left_idx
+//    //field node_e_idx = input_term.right_idx
+//    //field node_vp_idx = node.result_term_idx
+//
+//    //res = res && input_term.simple_term == EXPR_APP
+//
+//    //// parent 0 is correct
+//    res = res && is_eval_rule(parent0.rule)
+//    //Term parent0_result_term = terms[parent0.result_term_idx]
+//
+//    //field parent0_f_idx = parent0.input_term_idx
+//    //field parent0_v_idx = parent0_result_term.right_idx
+//
+//    //res = res && parent0_result_term.simple_term == EXPR_LAM
+//    //res = res && hash_list_permutation(node.ctx_idx, parent0.ctx_idx, context)
+//
+//    //// parent 1 is correct
+//    res = res && is_eval_rule(parent1.rule)
+//    //field parent1_v_idx = parent1.input_term_idx
+//    //field parent1_vp_idx = parent1.result_term_idx
+//
+//    //// ensure parent1 context is current node Ctx with an extra elem in front
+//    ////res = res && ctx_pop_proof(context[parent1.ctx_idx..parent1.ctx_idx+parent1.ctx_len], context[parent1.ctx_idx..parent1.ctx_idx+parent1.ctx_len])
+//    ////res = res && ctx_pop_proof(context, parent1.ctx_idx, parent1.ctx_len, node.ctx_idx, node.ctx_len)
+//    //res = res && hash_list_popped(parent1.ctx_idx, node.ctx_idx, context)
+//    //field parent1_e_idx = context.nodes[parent1.ctx_idx].value
+//
+//    //// ensure parent 1 resents lifts
+//    //res = res && parent1.num_lifts == 0
+//    //res = res && parent1.num_local_bindings == 0
+//
+//    //// enforce rules
+//    //res = res && node_f_idx == parent0_f_idx
+//    //// TODO: Fix this ... need to convert indices to field?
+//    ////res = res && node_e_idx == parent1_e_idx
+//    //res = res && parent0_v_idx == parent1_v_idx
+//    //res = res && parent1_vp_idx == node_vp_idx
+//    return res
+//
+//// ============================================================================
+//// e => n   e' => v'
+//// ---------------------------------
+////  e e' => n v'
+//// ============================================================================
+//def check_eval_app<N, T, C>(Node node, Node[N] proof, Term[T] terms, HashLists<C> context) -> bool:
+//    bool res = true
+//    Term input_term = terms[node.input_term_idx]
+//    Term result_term = terms[node.result_term_idx]
+//    Node parent0 = proof[node.parent0]
+//    Node parent1 = proof[node.parent1]
+//
+//    res = res && is_eval_rule(parent0.rule)
+//    res = res && is_eval_rule(parent1.rule)
+//
+//    //field parent0_e_idx = parent0.input_term_idx
+//    //field parent0_n_idx = parent0.result_term_idx
+//    //field parent1_ep_idx = parent1.input_term_idx
+//    //field parent1_vp_idx = parent1.result_term_idx
+//
+//    //field node_e_idx = input_term.left_idx
+//    //field node_ep_idx = input_term.right_idx
+//    //field node_n_idx = result_term.left_idx
+//    //field node_vp_idx = result_term.right_idx
+//
+//    //// maintain number of lifts
+//    //res = res && node.num_lifts == parent0.num_lifts && parent0.num_lifts == parent1.num_lifts
+//
+//    //// check context same
+//    //res = res && hash_list_permutation(node.ctx_idx, parent0.ctx_idx, context)
+//    //res = res && hash_list_permutation(node.ctx_idx, parent1.ctx_idx, context)
+//
+//    //res = res && input_term.simple_term == EXPR_APP
+//    //res = res && result_term.simple_term == EXPR_APP
+//    //res = res && parent0_e_idx == node_e_idx
+//    //res = res && parent1_ep_idx == node_ep_idx
+//    //res = res && parent0_n_idx == node_n_idx
+//    //res = res && parent1_vp_idx == node_vp_idx
+//
+//    return res
+//
+//// ============================================================================
+////
+//// ----------------------------------------------------
+////        (C,l) |- Var i => e'
+////
+//// ============================================================================
+//def check_type_var<N, T, C>(Node node, Node[N] proof, Term[T] terms, HashLists<C> context) -> bool:
+//    // TODO: probably need to modify to add lifts here
+//    bool res = true
+//    Term input_term = terms[node.input_term_idx]
+//    Term result_term = terms[node.result_term_idx]
+//
+//    // ensure lookup is correct
+//    res = res && input_term.simple_term == EXPR_VAR
+//    // TODO: fix
+//    //res = res && input_term.left_idx >= node.num_lifts
+//    // TODO: ensure lifts correct
+//    //field ctx_term_idx = context[node.ctx_idx + input_term.left_idx - node.num_lifts]
+//    // TODO: need to finish check here
+//
+//    return res
+//
+//
+//// ============================================================================
+////
+//// ---------------------------------
+////    C |- ESort i :: ESort (i+1)
+////
+//// ============================================================================
+//def check_type_sort<N, T>(Node node, Node[N] proof, Term[T] terms) -> bool:
+//    bool res = true
+//    Term input_term = terms[node.input_term_idx]
+//    Term result_term = terms[node.result_term_idx]
+//
+//    // intput is sort
+//    res = res && input_term.simple_term == EXPR_SORT
+//    // result is sort
+//    res = res && result_term.simple_term == EXPR_SORT
+//
+//    // by convention, Sort terms have their level in the left slot,
+//    // and zero in the right slot
+//    res = res && input_term.right_idx == 0
+//    res = res && result_term.right_idx == 0
+//    // result term has level i+1 of input term
+//    res = res && input_term.left_idx + 1 == result_term.left_idx
+//
+//    return res
+//
+//// ============================================================================
+////
+//// (C, l) |- f :: (pi x:A.B)  (C, l) |- a :: A  (a:C, 0) |- B => B'  (C, 0) |- unlift(B', B'')
+//// ---------------------------------------------------------------------------------------
+////                  (C, l) |- (f a) :: B''
+////
+//// ============================================================================
+//def check_type_app<N, T, C>(Node node, Node[N] proof, Term[T] terms, HashLists<C> context) -> bool:
+//    bool res = true
+//    Term input_term = terms[node.input_term_idx]
+//    Term result_term = terms[node.result_term_idx]
+//
+//    Node parent0 = proof[node.parent0]
+//    Node parent1 = proof[node.parent1]
+//    //Node parent2 = proof[node.parent2]
+//    //Node parent3 = proof[node.parent3]
+//
+//    // ensure node is well formed
+//    res = res && input_term.simple_term == EXPR_APP
+//    field node_f_idx = input_term.left_idx
+//    field node_a_idx = input_term.right_idx
+//    field node_Bpp_idx = node.result_term_idx
+//
+//    // check parent 0 formedness
+//    res = res && is_type_rule(parent0.rule)
+//    Term parent0_type = terms[parent0.result_term_idx]
+//    res = res && parent0_type.simple_term == EXPR_PI
+//    field p0_A_idx = parent0_type.left_idx
+//    field p0_B_idx = parent0_type.right_idx
+//    field p0_f_idx = parent0.input_term_idx
+//    res = res && hash_list_permutation(node.ctx_idx, parent0.ctx_idx, context)
+//
+//    // check parent 1 formedness
+//    res = res && is_type_rule(parent1.rule)
+//    field p1_a_idx = parent1.input_term_idx
+//    field p1_A_idx = parent1.result_term_idx
+//    res = res && hash_list_permutation(node.ctx_idx, parent1.ctx_idx, context)
+//
+//    // check parent 2 formedness
+//    //res = res && is_eval_rule(parent2.rule)
+//    //field p2_B_idx = parent2.input_term_idx
+//    //field p2_Bp_idx = parent2.result_term_idx
+//    //res = res && ctx_pop_proof(context[parent2.ctx_idx..parent2.ctx_idx+parent2.ctx_len], context[parent2.ctx_idx..parent2.ctx_idx+parent2.ctx_len])
+//    //res = res && hash_list_popped(parent2.ctx_idx, node.ctx_idx, context)
+//    //field p2_a_idx = context.nodes[parent2.ctx_idx].value
+//
+//    // check parent 3 formedness
+//    //res = res && parent3.rule == RULE_UNLIFT
+//    //field p3_Bp_idx = parent3.input_term_idx
+//    //field p3_Bpp_idx = parent3.result_term_idx
+//    //res = res && parent3.num_local_bindings == 0
+//
+//    // check lifts
+//    res = res && parent0.num_lifts == node.num_lifts
+//    res = res && parent1.num_lifts == node.num_lifts
+//    //res = res && parent2.num_lifts == 0
+//    //res = res && parent3.num_lifts == 0
+//
+//    // ensure terms match
+//    res = res && p0_A_idx == p1_A_idx
+//    //res = res && p0_B_idx == p2_B_idx
+//    res = res && p0_f_idx == node_f_idx
+//
+//    res = res && p1_a_idx == node_a_idx
+//    //res = res && p2_a_idx == node_a_idx
+//
+//    //res = res && p2_Bp_idx == p3_Bp_idx
+//    //res = res && p3_Bpp_idx == node_Bpp_idx
+//
+//    return res
+//
+//// ============================================================================
+////
+////             (A:C, l) |- b :: B
+//// ----------------------------------------------------------------------------
+////          (C, l) |- \ -> b :: (pi A.B)
+////
+//// ============================================================================
+//// TODO: Do we need to lift in here?
+//def check_type_lam<N, T, C>(Node node, Node[N] proof, Term[T] terms, HashLists<C> context) -> bool:
+//    bool res = true
+//    Term input_term = terms[node.input_term_idx]
+//    Term result_term = terms[node.result_term_idx]
+//
+//    Node parent0 = proof[node.parent0]
+//
+//    // ensure node well formed
+//    res = res && input_term.simple_term == EXPR_LAM
+//    res = res && result_term.simple_term == EXPR_PI
+//    field node_b_idx = input_term.right_idx
+//    field node_A_idx = result_term.left_idx
+//    field node_B_idx = result_term.right_idx
+//
+//    // ensure parent well formed
+//    res = res && is_type_rule(parent0.rule)
+//    field p_b_idx = parent0.input_term_idx
+//    field p_B_idx = parent0.result_term_idx
+//
+//    // ensure context is a prefix
+//    //res = res && ctx_pop_proof(context[parent0.ctx_idx..parent0.ctx_idx+parent0.ctx_len], context[parent0.ctx_idx..parent0.ctx_idx+parent0.ctx_len])
+//    res = res && hash_list_popped(parent0.ctx_idx, node.ctx_idx, context)
+//    field p_A_idx = context.nodes[parent0.ctx_idx].value
+//
+//    // check lifts
+//    res = res && parent0.num_lifts == node.num_lifts
+//
+//    // ensure terms match
+//    res = res && p_A_idx == node_A_idx
+//    res = res && p_B_idx == node_B_idx
+//    res = res && p_b_idx == node_b_idx
+//
+//    return res
+//
+//// ============================================================================
+////
+////  (C, l) |- p :: Sort i  (C, l) |- p => v  (v:C, l) |- p' :: Sort j
+//// ----------------------------------------------------------------------------
+////          (C, l) |- Pi p.p' :: Sort (imax (i, j))
+////
+//// ============================================================================
+//def check_type_pi<N, T, C>(Node node, Node[N] proof, Term[T] terms, HashLists<C> context) -> bool:
+//    bool res = true
+//    Term input_term = terms[node.input_term_idx]
+//    Term result_term = terms[node.result_term_idx]
+//
+//    Node parent0 = proof[node.parent0]
+//    Node parent1 = proof[node.parent1]
+//    //Node parent2 = proof[node.parent2]
+//
+//    // ensure node well formed
+//    res = res && input_term.simple_term == EXPR_PI
+//    res = res && result_term.simple_term == EXPR_SORT
+//    field node_sort_level = result_term.left_idx
+//    field node_p_idx = input_term.left_idx
+//    field node_pp_idx = input_term.right_idx
+//
+//    // ensure parent0 is well formed
+//    res = res && is_type_rule(parent0.rule)
+//    Term parent0_type_term = terms[parent0.result_term_idx]
+//    res = res && parent0_type_term.simple_term == EXPR_SORT
+//    field p0_p_idx = parent0.input_term_idx
+//    field p0_sort_i = parent0_type_term.left_idx
+//
+//    // ensure parent1 is well formed
+//    res = res && is_eval_rule(parent1.rule)
+//    field p1_p_idx = parent1.input_term_idx
+//    field p1_v_idx = parent1.result_term_idx
+//
+//    // ensure parent2 is well formed
+//    //res = res && is_type_rule(parent2.rule)
+//    //Term parent2_type_term = terms[parent2.result_term_idx]
+//    //res = res && parent2_type_term.simple_term == EXPR_SORT
+//    //field p2_pp_idx = parent2.input_term_idx
+//    //field p2_sort_j = parent2_type_term.left_idx
+//
+//    // check contexts equal
+//    res = res && hash_list_permutation(node.ctx_idx, parent0.ctx_idx, context)
+//    res = res && hash_list_permutation(node.ctx_idx, parent1.ctx_idx, context)
+//
+//    // ensure context for parent2 is a prefix
+//    //res = res && ctx_pop_proof(context[parent2.ctx_idx..parent2.ctx_idx+parent2.ctx_len], context[parent2.ctx_idx..parent2.ctx_idx+parent2.ctx_len])
+//    //res = res && hash_list_popped(parent2.ctx_idx, node.ctx_idx, context)
+//    //field p2_v_idx = context.nodes[parent2.ctx_idx].value
+//
+//    // check lifts
+//    res = res && parent0.num_lifts == node.num_lifts
+//    res = res && parent1.num_lifts == node.num_lifts
+//    //res = res && parent2.num_lifts == node.num_lifts
+//
+//    // ensure terms match
+//    //res = res && node_sort_level == imax(p0_sort_i, p2_sort_j)
+//    res = res && node_p_idx == p0_p_idx
+//    res = res && node_p_idx == p1_p_idx
+//    //res = res && node_pp_idx == p2_pp_idx
+//    //res = res && p1_v_idx == p2_v_idx
+//
+//    return res
+//
+////// ============================================================================
+//////
+//////      Axioms[i] == T
+////// ----------------------------------------------------------------------------
+//////   (C, l) |- Ax i :: T
+//////
+////// ============================================================================
+////def check_type_ax<N, T, A>(Node node, Node[N] proof, Term[T] terms, field[A] axioms) -> bool:
+////    bool res = true
+////    Term input_term = terms[node.input_term_idx]
+////    Term result_term = terms[node.result_term_idx]
+////
+////    // ensure rule is properly formed
+////    res = res && input_term.simple_term == EXPR_AX
+////
+////    // ensure axioms[i] == axiom term idx
+////    field axiom_idx = axioms[input_term.left_idx]
+////    res = res && axiom_idx == node.result_term_idx
+////
+////    return res
+////
+////
+////def axiom_prefix_check<N, A>(Term[N] terms, Term[A] axiomTerms) -> bool:
+////    bool res = true
+////
+////    res = res && A <= N
+////
+////    // TODO: do we need to do a validity check on all indices?
+////    //       might be best to do so just to be safe
+////    for u32 i in 0..A do
+////        res = res && terms[i] == axiomTerms[i]
+////    endfor
+////    return res
+//
+//def check_top_level_funcs<N>(Term[N] terms) -> bool:
+//    bool res = true
+//
+//    for field i in 0..u32_to_field(N) do
+//        Term t = terms[i]
+//        Term f = terms[t.left_idx]
+//
+//        res = res && if t.simple_term == EXPR_APP then \
+//            t.top_level_func == f.top_level_func \
+//        else \
+//            t.top_level_func == i \
+//        fi
+//
+//    endfor
+//
+//    return res
+//
+//// TODO: double check I added CTX equal everywhere
+//// TODO: add spec...easy enough
+//// TODO: REALLY IMPORTANT -- Add term well formedness check?
+////       - e.g. saying (Pi x:(lam foo).bar) should not be allowed
+//// Axioms
+//// private terms = axioms terms : private terms
+//// axioms = index into axiom terms
+//// axiom terms = terms
+////
+//// Axiom rule points to an a term in the private array
+//// Ensure that axiom term array == prefix of private term array
+////def main(private Node[PROOF_SIZE] proof, private Term[NUM_TERMS] terms, private HashLists<CONTEXT_SIZE> contexts, u32[NUM_AXIOMS] axioms, Term[NUM_PUBLIC_TERMS] axiomTerms) -> bool:
+//def main(private Node[PROOF_SIZE] proof, private Term[NUM_TERMS] terms, private HashLists<CONTEXT_SIZE> contexts) -> bool:
+//    // because axioms contain public terms, to make bookkeeping easier we just
+//    // enforce that the beginning of the private term array is equal to the public
+//    // one
+//    // TODO: probably a more efficient way to do this is to
+//    //       just concat them together. I guess then we need to make sure
+//    //       the indices are correct, e.g. all indices inside of the
+//    //       term array get offset by the max axiom idx. I'll handle that
+//    //       later....
+//    //field unused = hash_list_well_formed(contexts)
+//
+//    //bool axioms_ok = axiom_prefix_check(terms, axiomTerms)
+//    //assert(axioms_ok)
+//
+//    bool null_ok = true
+//
+//    bool lifts_ok = true
+//    bool unlifts_ok = true
+//
+//    bool eval_id_ok = true
+//    bool eval_var_ok = true
+//    bool eval_app_ok = true
+//    bool eval_app_lam_ok = true
+//    bool eval_app_pi_ok = true
+//    bool eval_lam_ok = true
+//    bool eval_pi_ok = true
+//
+//    bool type_var_ok = true
+//    bool type_sort_ok = true
+//    bool type_app_ok = true
+//    bool type_lam_ok = true
+//    bool type_pi_ok = true
+//    bool type_ax_ok = true
+//
+//    bool test = check_top_level_funcs(terms)
+//
+//
+//
+//    for field i in 0..PROOF_SIZE do
+//        Node node = proof[i]
+//
+//        Node parent0 = proof[node.parent0]
+//        Node parent1 = proof[node.parent1]
+//
+//        //assert(if node.rule == RULE_EVAL_APP || node.rule == RULE_EVAL_APP_LAM then is_eval_rule(parent0.rule) else true fi)
+//        //assert(if node.rule == RULE_EVAL_APP || node.rule == RULE_EVAL_APP_LAM then is_eval_rule(parent1.rule) else true fi)
+//
+//        //null_ok = null_ok && if node.rule == RULE_NULL then check_null(node, proof, terms) else true fi
+//
+//        //lifts_ok = lifts_ok && if node.rule == RULE_LIFT then check_lifts(node, proof, terms) else true fi
+//        //unlifts_ok = unlifts_ok && if node.rule == RULE_UNLIFT then check_unlifts(node, proof, terms) else true fi
+//
+//        eval_id_ok = eval_id_ok && if node.rule == RULE_EVAL_ID then check_eval_id(node, proof, terms) else true fi
+//        eval_var_ok = eval_var_ok && if node.rule == RULE_EVAL_VAR then check_eval_var(node, proof, terms, contexts) else true fi
+//        eval_app_ok = eval_app_ok && if node.rule == RULE_EVAL_APP then check_eval_app(node, proof, terms, contexts) else true fi
+//        eval_app_lam_ok = eval_app_lam_ok && if node.rule == RULE_EVAL_APP_LAM then check_eval_app_lam(node, proof, terms, contexts) else true fi
+//        //eval_app_pi_ok = eval_app_pi_ok && if node.rule == RULE_EVAL_APP_PI then check_eval_app_pi(node, proof, terms, contexts) else true fi
+//        //eval_lam_ok = eval_lam_ok && if node.rule == RULE_EVAL_LAM then check_eval_lam(node, proof, terms, contexts) else true fi
+//        //eval_pi_ok = eval_pi_ok && if node.rule == RULE_EVAL_PI then check_eval_pi(node, proof, terms, contexts) else true fi
+//
+//        //type_var_ok = type_var_ok && if node.rule == RULE_TYPE_VAR then check_type_var(node, proof, terms, contexts) else true fi
+//        //type_sort_ok = type_sort_ok && if node.rule == RULE_TYPE_SORT then check_type_sort(node, proof, terms) else true fi
+//        //type_app_ok = type_app_ok && if node.rule == RULE_TYPE_APP then check_type_app(node, proof, terms, contexts) else true fi
+//        //type_lam_ok = type_lam_ok && if node.rule == RULE_TYPE_LAM then check_type_lam(node, proof, terms, contexts) else true fi
+//        //type_pi_ok = type_pi_ok && if node.rule == RULE_TYPE_PI then check_type_pi(node, proof, terms, contexts) else true fi
+//        //type_ax_ok = type_ax_ok && if node.rule == RULE_TYPE_AX then check_type_ax(node, proof, terms, axioms) else true fi
+//    endfor
+//
+//
+//    bool res = true
+//    res = res && null_ok
+//    res = res && null_ok
+//    res = res && lifts_ok
+//    res = res && unlifts_ok
+//
+//    res = res && eval_id_ok
+//    res = res && eval_var_ok
+//    res = res && eval_app_ok
+//    res = res && eval_app_lam_ok
+//    res = res && eval_app_pi_ok
+//    res = res && eval_lam_ok
+//    res = res && eval_pi_ok
+//
+//    res = res && type_var_ok
+//    res = res && type_sort_ok
+//    res = res && type_app_ok
+//    res = res && type_lam_ok
+//    res = res && type_pi_ok
+//    res = res && type_ax_ok
+//
+//    res = res && test
+//
+//    return res

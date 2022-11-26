@@ -1,0 +1,65 @@
+// This file has constants / enums that must be unique amongst themselves
+
+// We will use the symbol => to mean "evaluates to"
+// The symbol | separates antecedents and consequences
+
+// I may use term/type inter-changably throughout this based on context.
+// They are really the same thing
+
+// exprs
+const field EXPR_NULL = 0
+const field EXPR_VAR = 1
+const field EXPR_SORT = 2
+const field EXPR_APP = 3
+const field EXPR_LAM = 4
+const field EXPR_PI = 5
+const field EXPR_AX = 6
+
+const field EXPR_IND = 7
+const field EXPR_IND_CTOR = 8
+const field EXPR_IND_REC = 9
+
+// rules
+const field RULE_NULL = 0
+
+// evaluation rules
+const field RULE_EVAL_ID = 1
+const field RULE_EVAL_VAR = 2
+const field RULE_EVAL_SORT = 3 // TODO: unused
+const field RULE_EVAL_APP = 4
+const field RULE_EVAL_APP_LAM = 5
+const field RULE_EVAL_APP_LAM_SUB = 28
+const field RULE_EVAL_APP_PI = 6
+const field RULE_EVAL_LAM = 7
+const field RULE_EVAL_PI = 8
+const field RULE_EVAL_AX = 9
+
+const field RULE_TYPE_VAR = 10
+const field RULE_TYPE_SORT = 11
+const field RULE_TYPE_APP = 12
+const field RULE_TYPE_APP_SUB = 30
+const field RULE_TYPE_LAM = 13
+const field RULE_TYPE_PI = 14
+const field RULE_TYPE_PI_SUB = 29
+const field RULE_TYPE_AX = 15
+
+// const field RULE_LIFT = 16
+
+const field RULE_PROOF_IRREL = 17
+const field RULE_PROOF_IRREL_SUB1 = 33
+const field RULE_EVAL_TYPE = 18
+
+const field RULE_APPLY_ELIM = 19
+const field RULE_GET_ARG = 20
+
+const field RULE_APPLY_ELIM_EVAL = 21
+
+const field RULE_TYPE_IND = 22
+const field RULE_TYPE_IND_CTOR = 23
+const field RULE_TYPE_IND_REC = 24
+const field RULE_IND_PREFIX = 25
+
+const field RULE_EVAL_IND = 26
+const field RULE_EVAL_IND_SUB1 = 31
+const field RULE_EVAL_IND_SUB2 = 32
+const field RULE_EVAL_TRANSITIVE = 27

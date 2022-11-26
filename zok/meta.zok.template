@@ -1,0 +1,8 @@
+
+const field PROOF_SIZE = __PROOF_SIZE
+const field NUM_TERMS = __NUM_TERMS
+const u32 CONTEXT_SIZE = __CONTEXT_SIZE
+const field NUM_LIFTS = __NUM_LIFTS
+const field NUM_INDS = __NUM_INDS
+const field NUM_PUB_TERMS = __NUM_PUB_TERMS
+//const u32 NUM_AXIOMS = 1

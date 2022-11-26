@@ -1,0 +1,61 @@
+
+const field MAX_RULES = 20
+
+struct ExpLift {
+    field max_binding
+    field parent0
+    field parent1
+    field min_binding_seen
+    field input_term_idx
+    field result_term_idx
+}
+
+struct ExpInd {
+    field ty
+    field num_params
+    field rules
+    field rule_nnrs
+    field rule_nrs
+    field num_rules
+    field rec_body
+    field elim_argc
+}
+
+struct ExpRule {
+    field rule
+    field ctx_idx
+    field max_binding
+    field parent0
+    field parent1
+    field parent0_quot
+    field parent1_quot
+    field lift_rule
+    field input_term_idx
+    field result_term_idx
+    field inductive
+    field extra
+    field extra2
+    field extra3
+    field extra4
+    field ind_rule
+    field ind_ctor_quot
+    field ind_nnr_quot
+    field ind_nr_quot
+}
+
+struct ExpTerm {
+    field kind
+    field name // TODO: can we compress?
+    field left
+    field right
+    field top_level_func
+    field argc // TODO:
+                 // minimum name bound in this term
+                 // if it is less than the maximum bound name in the current proof step
+                 // we must alpha rename
+                 // Terms that don't bind names keep this as usize::MAX
+                 //min_binding: usize
+    field ind
+    field ind_ctor
+}
+
