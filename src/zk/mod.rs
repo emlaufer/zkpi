@@ -40,11 +40,12 @@ pub struct ExpTerm {
 
     top_level_func: usize,
     argc: usize, // TODO:
-                 // minimum name bound in this term
-                 // if it is less than the maximum bound name in the current proof step,
-                 // we must alpha rename
-                 // Terms that don't bind names keep this as usize::MAX
-                 //min_binding: usize,
+    // minimum name bound in this term
+    // if it is less than the maximum bound name in the current proof step,
+    // we must alpha rename
+    // Terms that don't bind names keep this as usize::MAX
+    //min_binding: usize,
+    ax: usize,
 }
 
 impl ExpTerm {
@@ -57,6 +58,7 @@ impl ExpTerm {
         right: usize,
         ind: usize,
         ind_ctor: usize,
+        ax: usize,
     ) -> ExpTerm {
         ExpTerm {
             kind,
@@ -67,49 +69,50 @@ impl ExpTerm {
             ind_ctor,
             top_level_func: 0,
             argc: 0,
+            ax: 0,
             //min_binding,
         }
     }
 
     pub fn bound(name: usize) -> ExpTerm {
-        ExpTerm::new(EXPR_VAR, name, 0, 0, 0, 0)
+        ExpTerm::new(EXPR_VAR, name, 0, 0, 0, 0, 0)
     }
 
     // TODO: remove binding
     pub fn sort(level: usize) -> ExpTerm {
-        ExpTerm::new(EXPR_SORT, level, 0, 0, 0, 0)
+        ExpTerm::new(EXPR_SORT, level, 0, 0, 0, 0, 0)
     }
 
     pub fn lam(name: usize, domain: usize, body: usize) -> ExpTerm {
-        ExpTerm::new(EXPR_LAM, name, domain, body, 0, 0)
+        ExpTerm::new(EXPR_LAM, name, domain, body, 0, 0, 0)
     }
 
     pub fn pi(name: usize, domain: usize, body: usize) -> ExpTerm {
-        ExpTerm::new(EXPR_PI, name, domain, body, 0, 0)
+        ExpTerm::new(EXPR_PI, name, domain, body, 0, 0, 0)
     }
 
     pub fn app(f: usize, e: usize, top_level_func: usize) -> ExpTerm {
-        let mut res = ExpTerm::new(EXPR_APP, 0, f, e, 0, 0);
+        let mut res = ExpTerm::new(EXPR_APP, 0, f, e, 0, 0, 0);
         res.top_level_func = top_level_func;
         res
     }
 
     pub fn ax(idx: usize, dedup: usize) -> ExpTerm {
         // TODO: remove dedup from final version
-        ExpTerm::new(EXPR_AX, 0, idx, dedup, 0, 0)
+        ExpTerm::new(EXPR_AX, 0, 0, dedup, 0, 0, idx)
     }
 
     pub fn ind(idx: usize) -> ExpTerm {
-        ExpTerm::new(EXPR_IND, 0, 0, 0, idx, 0)
+        ExpTerm::new(EXPR_IND, 0, 0, 0, idx, 0, 0)
     }
 
     pub fn ind_ctor(ind_idx: usize, ctor_idx: usize) -> ExpTerm {
-        ExpTerm::new(EXPR_IND_CTOR, 0, 0, 0, ind_idx, ctor_idx)
+        ExpTerm::new(EXPR_IND_CTOR, 0, 0, 0, ind_idx, ctor_idx, 0)
     }
 
     pub fn ind_rec(ind_idx: usize, motive_sort: usize) -> ExpTerm {
         // TODO: technically this could cause errors if motive_sort > num_rules
-        ExpTerm::new(EXPR_IND_REC, 0, 0, 0, ind_idx, motive_sort)
+        ExpTerm::new(EXPR_IND_REC, 0, 0, 0, ind_idx, motive_sort, 0)
     }
 }
 
@@ -1321,13 +1324,6 @@ impl HashList {
         }
 
         let list_head = &self.nodes[list];
-        println!(
-            "list hash: {:?}, this hash: {:?}, key {}, value {}",
-            list_head.hash,
-            self.hash(key, value),
-            key,
-            value
-        );
         let rem = Wrapping(list_head.hash) % (self.hash(key, value));
         //println!("got: {:?}", rem);
         rem.0 == 0
@@ -1573,13 +1569,14 @@ impl ZkInput {
         num_rules: usize,
         num_nnrs: usize,
         num_nrs: usize,
+        num_axs: usize,
     ) -> String {
         let mut result = "(set_default_modulus 52435875175126190479447740508185965837690552500527637822603658699938581184513
 (let (".to_string();
 
         let empty_rule = ExpRule::new();
         let empty_lift = ExpLift::lift(0, 0, 0, 0, 0, 0);
-        let empty_term = ExpTerm::new(0, 0, 0, 0, 0, 0);
+        let empty_term = ExpTerm::new(0, 0, 0, 0, 0, 0, 0);
         let empty_node = HashNode::empty();
 
         for i in 0..proof_size {
@@ -1655,6 +1652,7 @@ impl ZkInput {
             result += &serialize_field("terms", Some(i), Some("argc"), term.argc);
             result += &serialize_field("terms", Some(i), Some("ind"), term.ind);
             result += &serialize_field("terms", Some(i), Some("ind_ctor"), term.ind_ctor);
+            result += &serialize_field("terms", Some(i), Some("ax"), term.ax);
         }
 
         for (i, node) in self.contexts.nodes.iter().enumerate() {
@@ -1707,6 +1705,7 @@ impl ZkInput {
             result += &serialize_field("public_terms", Some(i), Some("argc"), term.argc);
             result += &serialize_field("public_terms", Some(i), Some("ind"), term.ind);
             result += &serialize_field("public_terms", Some(i), Some("ind_ctor"), term.ind_ctor);
+            result += &serialize_field("public_terms", Some(i), Some("ax"), term.ax);
         }
 
         for (i, ind) in self.inductives.iter().enumerate() {
@@ -1718,6 +1717,14 @@ impl ZkInput {
             result += &serialize_field("inductives", Some(i), Some("num_rules"), ind.num_rules);
             result += &serialize_field("inductives", Some(i), Some("rec_body"), ind.rec_body);
             result += &serialize_field("inductives", Some(i), Some("elim_argc"), ind.elim_argc);
+        }
+
+        for i in 0..self.axioms.len() {
+            result += &serialize_field("axioms", Some(i), None, self.axioms[i]);
+        }
+        // unsound but placeholder...
+        if self.axioms.len() == 0 {
+            result += &serialize_field("axioms", Some(0), None, 0);
         }
 
         result += &format!("(expected_type #f{})\n", self.expected_type);
@@ -1740,6 +1747,7 @@ impl ZkInput {
             self.ind_rules.nodes.len(),
             self.ind_nnrs.len(),
             self.ind_nrs.len(),
+            self.axioms.len(),
         )
     }
 }
@@ -1827,7 +1835,6 @@ impl Exporter {
         ////    exp.add_inductive(ind);
         ////}
         //println!("done");
-        // TODO; axioms
 
         let term = exp.export_term(expected_type, 0, None);
 
@@ -3082,11 +3089,6 @@ impl Exporter {
                         .zk_input
                         .contexts
                         .add(HashList::EMPTY, input.name, *result_idx);
-                    println!("MY CTX IS: {}", self.zk_input.contexts.to_string(ctx));
-                    println!(
-                        "total ctxx is: {}",
-                        self.zk_input.contexts.to_string(zk_context)
-                    );
                     ExpRule::eval_var(input_idx, lifted_idx, ctx, max_binding, lifted_rule)
                 } else {
                     ExpRule::eval_id(input_idx, zk_context, max_binding)

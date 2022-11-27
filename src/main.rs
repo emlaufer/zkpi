@@ -62,7 +62,6 @@ fn main() -> io::Result<()> {
     file.read_to_end(&mut buf);
     let mut encoding = lean::LeanEncoding::parse(std::str::from_utf8(&buf).unwrap()).unwrap();
 
-    println!("names: {:?}", encoding.theorem_names());
     let names = encoding.theorem_names();
     let mut size_cache = Some(hashconsing::hash_coll::HConMap::default());
     let mut term_cache = Some(HashMap::new());
@@ -132,13 +131,12 @@ fn main() -> io::Result<()> {
                 println!("Success!");
             }
             Command::Export => {
-                println!("GOT: {:?}", options.sizes);
                 println!("{}", zk::Exporter::export_string(exported.clone()).unwrap());
             }
             Command::Count => {
                 let zk_in = zk::Exporter::export(exported.clone()).unwrap();
                 println!(
-                    "{},{},{},{},{},{},{},{},{} (AXIOMS {})",
+                    "{},{},{},{},{},{},{},{},{},{}",
                     zk_in.rules.len(),
                     zk_in.terms.len(),
                     zk_in.contexts.nodes.len(),
@@ -148,7 +146,7 @@ fn main() -> io::Result<()> {
                     zk_in.ind_rules.nodes.len(),
                     zk_in.ind_nnrs.nodes.len(),
                     zk_in.ind_nrs.nodes.len(),
-                    zk_in.axioms.len(),
+                    std::cmp::max(zk_in.axioms.len(), 1),
                 );
             }
             Command::List => {
