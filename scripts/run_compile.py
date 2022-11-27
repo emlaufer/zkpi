@@ -6,6 +6,7 @@ import signal
 import sys
 import re
 import os
+import time
 
 proven = []
 failed = []
@@ -23,7 +24,7 @@ def handler(signum, frame):
     exit(1)
 
 def crabpi(filename, command, name):
-    process = subprocess.run(["cargo", "run", "--release", "stdlib.out", "count", name], capture_output=True)
+    process = subprocess.run(["cargo", "run", "--release", filename, command, name], capture_output=True)
     return process.stdout
 
 sed_template = "s/__PROOF_SIZE/{}/g; s/__NUM_TERMS/{}/g; s/__CONTEXT_SIZE/{}/g; s/__NUM_LIFTS/{}/g; s/__NUM_INDS/{}/g; s/__NUM_PUB_TERMS/{}/g; s/__NUM_RULES/{}/g; s/__NUM_NNRS/{}/g; s/__NUM_NRS/{}/g; s/__NUM_AXIOMS/{}/g;"
@@ -85,39 +86,60 @@ def set_compile_size(size_tuple):
     with open(meta_file, 'w') as meta:
         meta.write(process.stdout.decode("utf-8"))
 
-def compile_local(size_tuple):
+def compile_local(size_tuple, writer):
+    log("Compile local")
     set_compile_size(size_tuple)
-    process = subprocess.run(["circ", "eval.zok", "r1cs", "--proof-system", "mirage", "--action", "setup"], capture_output=True, timeout=108000)
+    start_time = time.time()
+    try:
+        process = subprocess.run(["circ", "eval.zok", "r1cs", "--proof-system", "mirage", "--action", "setup"], capture_output=True, timeout=1)
+    except subprocess.TimeoutExpired:
+        row = list(size_tuple)
+        row.append("timeout")
+        log("got timeout")
+        writer.writerow(row)
+        return
+    end_time = time.time()
     if process.returncode == 0:
-        print("COOL")
-        #out.write(row[0]+","+process.stdout.decode("utf-8"))
+        row = list(size_tuple)
+        row.append(end_time - start_time)
+        log("got ", row)
+        writer.writerow(row)
     else:
-        print("error...", process.returncode)
-        print("got", process.stderr)
-        print("got", process.stdout)
+        row = list(size_tuple)
+        row.append(-1 * process.returncode)
+        writer.writerow(row)
 
 def r1cs_size_local(size_tuple, writer):
+    log("r1cs local")
     set_compile_size(size_tuple)
-    process = subprocess.run(["circ", "eval.zok", "r1cs", "--proof-system", "mirage", "--action", "count"], capture_output=True, timeout=108000)
+    try:
+        process = subprocess.run(["circ", "eval.zok", "r1cs", "--proof-system", "mirage", "--action", "count"], capture_output=True, timeout=108000)
+    except subprocess.TimeoutExpired:
+        row = list(size_tuple)
+        row.append("timeout")
+        log("got timeout")
+        writer.writerow(row)
+        return
     if process.returncode == 0:
         out_string = process.stdout.decode("utf-8")
         r1cs_size_pattern = "Final R1cs size: (\d*)"
         m = re.search(r1cs_size_pattern, out_string)
         row = list(size_tuple)
         row.append(m.group(1))
+        log("got ", row)
         writer.writerow(row)
     else:
         row = list(size_tuple)
-        row.append(-1)
+        row.append(-1 * process.returncode)
         writer.writerow(row)
 
 def sizes():
-    run_over_all("count", "stdlib_sizes.csv")
+    run_over_all("count", "stdlib.out", "stdlib_sizes.csv")
 
 def oneshot(name):
     print(crabpi("stdlib.out", "count", name))
 
-def run_over_all(cmd, outfile):
+def run_over_all(cmd, filename, outfile):
     with open(filename, newline='') as csvfile:
         with open(outfile, "w") as out:
             log("Counting all in", filename)
@@ -133,10 +155,19 @@ def run_over_all(cmd, outfile):
 #if sys.argv[1] == "count":
 #    sizes()
 
-with open("../data/r1cs.csv", mode="w") as csvfile:
-    csv_writer = csv.writer(csvfile)
-    for sizes in compile_sizes:
-        r1cs_size_local(sizes, csv_writer)
+if sys.argv[1] == "r1cs":
+    with open("../data/r1cs.csv", mode="w+") as csvfile:
+        csv_writer = csv.writer(csvfile)
+        for sizes in compile_sizes:
+            r1cs_size_local(sizes, csv_writer)
+elif sys.argv[1] == "count":
+    sizes()
+elif sys.argv[1] == "compile":
+    with open("../data/compile_times.csv", mode="w+") as csvfile:
+        csv_writer = csv.writer(csvfile)
+        for sizes in compile_sizes:
+            compile_local(sizes, csv_writer)
+
 
 #set_compile_size(3, 4, 3, 4, 3, 4)
 #signal.signal(signal.SIGINT, handler)
