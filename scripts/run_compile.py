@@ -107,7 +107,9 @@ def r1cs_size_local(size_tuple, writer):
         row.append(m.group(1))
         writer.writerow(row)
     else:
-        out_file.write(size_tuple +",-1")
+        row = list(size_tuple)
+        row.append(-1)
+        writer.writerow(row)
 
 def sizes():
     run_over_all("count", "stdlib_sizes.csv")
