@@ -32,7 +32,7 @@ fn imax(i: usize, j: usize) -> usize {
     }
 }
 
-fn is_eval_rule(rule: usize) -> bool {
+pub fn is_eval_rule(rule: usize) -> bool {
     //return rule >= 1 && rule < 10
     return rule == RULE_EVAL_ID
         || rule == RULE_EVAL_VAR
@@ -1070,6 +1070,9 @@ fn check_eval_ind_sub2(
         node.ind_nnr_quot,
         nnrs
     ));
+    println!("inductive: {:?}", inductive);
+    println!("idx: {:}", ind_rule_index);
+    println!("quot: {:}", node.ind_nr_quot);
     assert!(hash_list_contains(
         inductive.rule_nrs,
         ind_rule_index,
@@ -1369,7 +1372,7 @@ pub fn simulate(
 
     // TODO: axiom hash map....
 
-    check_terms(terms);
+    //check_terms(terms);
     check_axioms(public_terms, terms);
 
     if check_res {

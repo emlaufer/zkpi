@@ -807,8 +807,8 @@ impl LeanEncoding {
             return Ok(term::ind_ctor(ind_name_full, rule_name));
         }
 
-        if name_string.starts_with("quot") {
-            return Err("We don't support quot".to_string());
+        if name_string.starts_with("quot") && name_string != "quot.sound" {
+            return Err(format!("We don't support quot: {}", name_string));
         }
 
         // if const is an induction eliminator...
@@ -985,7 +985,77 @@ impl LeanEncoding {
             } => {
                 // TODO: ensure it type checks
                 //let ty_term = self.export_expr(ty, axioms, inductives, combined_univs)?;
-                self.export_expr(*val, axioms, inductives, &universes, let_bindings, cache)
+                //self.export_expr(*val, axioms, inductives, &universes, let_bindings, cache);
+
+                let name_string = self.resolve_name(*name);
+                //if name_string == "LoVe.state"
+                //    || name_string == "decidable_eq"
+                //    || name_string.contains("decidable_eq")
+                //    || name_string.contains("decidable")
+                //    || name_string == "decidable_rel"
+                //    || name_string == "not"
+                //    || name_string == "nat.no_confusion_type"
+                //    || name_string == "nat.cases_on"
+                //    || name_string == "nat.below"
+                //    || name_string == "ne"
+                //    || name_string == "as_true"
+                //    || name_string == "ite"
+                //    || name_string == "trivial"
+                //    || name_string == "dite"
+                //    || name_string == "nat.brec_on"
+                //    || name_string == "pprod.fst"
+                //    || name_string == "id_rhs"
+                ////    //|| name_string == "auto_param"
+                ////    //|| name_string == "add_semigroup"
+                ////    //|| name_string == "add_comm_monoid_with_one.add"
+                //    || name_string.contains("has_one")
+                //    || name_string.contains("has_zero")
+                //    || name_string.contains("has_add")
+                //    || name_string.contains("cases_on")
+                ////    //|| name_string == "non_assoc_semiring.to_add_comm_monoid_with_one"
+                ////    //|| name_string == "non_assoc_semiring.add"
+                ////    //|| name_string == "semiring.to_non_assoc_semiring"
+                ////    //|| name_string == "semiring.add"
+                ////    || name_string == "LoVe.LoVe.SWAP"
+                ////    || name_string == "of_as_true"
+                //////|| name_string == "LoVe.LoVe.GAUSS"
+                //////|| name_string == "LoVe.stmt.while_inv"
+                //|| name_string.contains("eq")
+                //|| name_string.contains("nat")
+                //|| name_string.contains("sub")
+                //|| name_string.contains("add")
+                //|| name_string.contains("big_step")
+                ////|| name_string.contains("bit0")
+                //////|| name_string.contains("iff")
+                //////|| name_string.contains("not")
+                //|| name_string.contains("absurd")
+                //////|| name_string.contains("congr")
+                //|| name_string.contains("no_confusion")
+                //////|| name_string.contains("cases_on")
+                //////|| name_string.contains("add_monoid")
+                //{
+                return self.export_expr(*val, axioms, inductives, &universes, let_bindings, cache);
+                //}
+                //let ty_term =
+                //    self.export_expr(*ty, axioms, inductives, &universes, let_bindings, cache)?;
+                //let universe_inst_string = universe_params
+                //    .iter()
+                //    .map(|p| {
+                //        universes
+                //            .get(p)
+                //            .ok_or(format!(
+                //                "failed to get universe for {}",
+                //                self.resolve_name(*name)
+                //            ))
+                //            .map(|p| p.to_string())
+                //    })
+                //    .collect::<Result<Vec<_>, _>>()?
+                //    .join(",");
+                //let name_string_raw = self.resolve_name(*name);
+                //let name_string = name_string_raw.clone() + ".{" + &universe_inst_string + "}";
+                ////println!("HEY : {}", name_string);
+                //axioms.insert(name_string.clone(), ty_term);
+                //Ok(term::axiom(name_string))
             }
             Definition::Axiom {
                 name,

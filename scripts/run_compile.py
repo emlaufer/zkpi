@@ -34,50 +34,53 @@ compile_sizes = [
         (10, 1, 1, 1, 1, 1, 1, 1, 1, 1),
         (100, 1, 1, 1, 1, 1, 1, 1, 1, 1),
         (1000, 1, 1, 1, 1, 1, 1, 1, 1, 1),
-        (10000, 1, 1, 1, 1, 1, 1, 1, 1, 1),
-        (1, 10, 1, 1, 1, 1, 1, 1, 1, 1),
-        (1, 100, 1, 1, 1, 1, 1, 1, 1, 1),
-        (1, 1000, 1, 1, 1, 1, 1, 1, 1, 1),
-        (1, 10000, 1, 1, 1, 1, 1, 1, 1, 1),
-        (1, 1, 10, 1, 1, 1, 1, 1, 1, 1),
-        (1, 1, 100, 1, 1, 1, 1, 1, 1, 1),
-        (1, 1, 1000, 1, 1, 1, 1, 1, 1, 1),
-        (1, 1, 10000, 1, 1, 1, 1, 1, 1, 1),
-        (1, 1, 1, 10, 1, 1, 1, 1, 1, 1),
-        (1, 1, 1, 100, 1, 1, 1, 1, 1, 1),
-        (1, 1, 1, 1000, 1, 1, 1, 1, 1, 1),
-        (1, 1, 1, 10000, 1, 1, 1, 1, 1, 1),
-        (1, 1, 1, 1, 10, 1, 1, 1, 1, 1),
-        (1, 1, 1, 1, 100, 1, 1, 1, 1, 1),
-        (1, 1, 1, 1, 1000, 1, 1, 1, 1, 1),
-        (1, 1, 1, 1, 10000, 1, 1, 1, 1, 1),
-        (1, 1, 1, 1, 1, 10, 1, 1, 1, 1),
-        (1, 1, 1, 1, 1, 100, 1, 1, 1, 1),
-        (1, 1, 1, 1, 1, 1000, 1, 1, 1, 1),
-        (1, 1, 1, 1, 1, 10000, 1, 1, 1, 1),
-        (1, 1, 1, 1, 1, 1, 10, 1, 1, 1),
-        (1, 1, 1, 1, 1, 1, 100, 1, 1, 1),
-        (1, 1, 1, 1, 1, 1, 1000, 1, 1, 1),
-        (1, 1, 1, 1, 1, 1, 10000, 1, 1, 1),
-        (1, 1, 1, 1, 1, 1, 1, 10, 1, 1),
-        (1, 1, 1, 1, 1, 1, 1, 100, 1, 1),
-        (1, 1, 1, 1, 1, 1, 1, 1000, 1, 1),
-        (1, 1, 1, 1, 1, 1, 1, 10000, 1, 1),
-        (1, 1, 1, 1, 1, 1, 1, 1, 10, 1),
-        (1, 1, 1, 1, 1, 1, 1, 1, 100, 1),
-        (1, 1, 1, 1, 1, 1, 1, 1, 1000, 1),
-        (1, 1, 1, 1, 1, 1, 1, 1, 10000, 1),
-        (1, 1, 1, 1, 1, 1, 1, 1, 1, 10),
-        (1, 1, 1, 1, 1, 1, 1, 1, 1, 100),
-        (1, 1, 1, 1, 1, 1, 1, 1, 1, 1000),
-        (1, 1, 1, 1, 1, 1, 1, 1, 1, 10000),
-        (10, 10, 10, 10, 10, 10, 10, 10, 10, 10),
-        (100, 100, 100, 100, 100, 100, 100, 100, 100, 100),
-        (1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000),
-        (10000, 10000, 10000, 10000, 10000, 10000, 10000, 10000, 10000, 10000),
+        #(10000, 1, 1, 1, 1, 1, 1, 1, 1, 1),
+        #(1, 10, 1, 1, 1, 1, 1, 1, 1, 1),
+        #(1, 100, 1, 1, 1, 1, 1, 1, 1, 1),
+        #(1, 1000, 1, 1, 1, 1, 1, 1, 1, 1),
+        #(1, 10000, 1, 1, 1, 1, 1, 1, 1, 1),
+        #(1, 1, 10, 1, 1, 1, 1, 1, 1, 1),
+        #(1, 1, 100, 1, 1, 1, 1, 1, 1, 1),
+        #(1, 1, 1000, 1, 1, 1, 1, 1, 1, 1),
+        #(1, 1, 10000, 1, 1, 1, 1, 1, 1, 1),
+        #(1, 1, 1, 10, 1, 1, 1, 1, 1, 1),
+        #(1, 1, 1, 100, 1, 1, 1, 1, 1, 1),
+        #(1, 1, 1, 1000, 1, 1, 1, 1, 1, 1),
+        #(1, 1, 1, 10000, 1, 1, 1, 1, 1, 1),
+        #(1, 1, 1, 1, 10, 1, 1, 1, 1, 1),
+        #(1, 1, 1, 1, 100, 1, 1, 1, 1, 1),
+        #(1, 1, 1, 1, 1000, 1, 1, 1, 1, 1),
+        #(1, 1, 1, 1, 10000, 1, 1, 1, 1, 1),
+        #(1, 1, 1, 1, 1, 10, 1, 1, 1, 1),
+        #(1, 1, 1, 1, 1, 100, 1, 1, 1, 1),
+        #(1, 1, 1, 1, 1, 1000, 1, 1, 1, 1),
+        #(1, 1, 1, 1, 1, 10000, 1, 1, 1, 1),
+        #(1, 1, 1, 1, 1, 1, 10, 1, 1, 1),
+        #(1, 1, 1, 1, 1, 1, 100, 1, 1, 1),
+        #(1, 1, 1, 1, 1, 1, 1000, 1, 1, 1),
+        #(1, 1, 1, 1, 1, 1, 10000, 1, 1, 1),
+        #(1, 1, 1, 1, 1, 1, 1, 10, 1, 1),
+        #(1, 1, 1, 1, 1, 1, 1, 100, 1, 1),
+        #(1, 1, 1, 1, 1, 1, 1, 1000, 1, 1),
+        #(1, 1, 1, 1, 1, 1, 1, 10000, 1, 1),
+        #(1, 1, 1, 1, 1, 1, 1, 1, 10, 1),
+        #(1, 1, 1, 1, 1, 1, 1, 1, 100, 1),
+        #(1, 1, 1, 1, 1, 1, 1, 1, 1000, 1),
+        #(1, 1, 1, 1, 1, 1, 1, 1, 10000, 1),
+        #(1, 1, 1, 1, 1, 1, 1, 1, 1, 10),
+        #(1, 1, 1, 1, 1, 1, 1, 1, 1, 100),
+        #(1, 1, 1, 1, 1, 1, 1, 1, 1, 1000),
+        #(1, 1, 1, 1, 1, 1, 1, 1, 1, 10000),
+        #(10, 10, 10, 10, 10, 10, 10, 10, 10, 10),
+        #(100, 100, 100, 100, 100, 100, 100, 100, 100, 100),
+        #(1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000),
+        #(10000, 10000, 10000, 10000, 10000, 10000, 10000, 10000, 10000, 10000),
     ]
 
 os.chdir("../zok")
+
+library = "stdlib"
+lib_out_file = library + ".out"
 
 def set_compile_size(size_tuple):
     proof_size, num_terms, context_size, num_lifts, num_inds, num_pub_terms, num_rules, num_nnrs, num_nrs, num_axs = size_tuple
@@ -91,7 +94,7 @@ def compile_local(size_tuple, writer):
     set_compile_size(size_tuple)
     start_time = time.time()
     try:
-        process = subprocess.run(["circ", "eval.zok", "r1cs", "--proof-system", "mirage", "--action", "setup"], capture_output=True, timeout=1)
+        process = subprocess.run(["circ", "eval.zok", "r1cs", "--proof-system", "mirage", "--action", "setup"], capture_output=True, timeout=108000)
     except subprocess.TimeoutExpired:
         row = list(size_tuple)
         row.append("timeout")
@@ -134,23 +137,32 @@ def r1cs_size_local(size_tuple, writer):
         writer.writerow(row)
 
 def sizes():
-    run_over_all("count", "stdlib.out", "stdlib_sizes.csv")
+    with open("../data/proof_sizes_"+library+".csv", mode="w+") as csvfile:
+        csv_writer = csv.writer(csvfile)
+        run_over_all("count", "../"+library+".csv", csv_writer)
 
 def oneshot(name):
     print(crabpi("stdlib.out", "count", name))
 
-def run_over_all(cmd, filename, outfile):
+def run_over_all(cmd, filename, writer):
     with open(filename, newline='') as csvfile:
-        with open(outfile, "w") as out:
-            log("Counting all in", filename)
-            reader = csv.reader(csvfile, delimiter=',', quotechar='|')
-            for row in list(reader):
-                log("Counting: ", row[0])
-                process = subprocess.run(["cargo", "run", "--release", "stdlib.out", cmd, row[0]], capture_output=True, timeout=108000)
-                if process.returncode == 0:
-                    out.write(row[0]+","+process.stdout.decode("utf-8"))
-                else:
-                    print("error...", process.returncode)
+        log("Counting all in", filename)
+        reader = csv.reader(csvfile, delimiter=',', quotechar='|')
+        for row in list(reader):
+            log("Counting: ", row[0])
+            try:
+                process = subprocess.run(["cargo", "run", "--release", "../"+lib_out_file, cmd, row[0]], capture_output=True, timeout=108000)
+            except subprocess.TimeoutExpired:
+                row = list(size_tuple)
+                row.append("timeout")
+                log("got timeout")
+                writer.writerow(row.u)
+                continue
+            if process.returncode == 0:
+                writer.writerow([row[0]] + process.stdout.decode("utf-8").strip().split(","))
+            else:
+                log("error...", process.returncode, process.stderr)
+                writer.writerow([row[0],-1*process.returncode])
 #print(sys.argv[1])
 #if sys.argv[1] == "count":
 #    sizes()

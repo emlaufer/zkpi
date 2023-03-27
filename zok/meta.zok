@@ -1,5 +1,5 @@
 
-const field PROOF_SIZE = 10000
+const field PROOF_SIZE = 100
 const field NUM_TERMS = 1
 const u32 CONTEXT_SIZE = 1
 const field NUM_LIFTS = 1

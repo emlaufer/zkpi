@@ -69,7 +69,7 @@ impl ExpTerm {
             ind_ctor,
             top_level_func: 0,
             argc: 0,
-            ax: 0,
+            ax,
             //min_binding,
         }
     }
@@ -132,7 +132,23 @@ pub struct ExpInd {
     elim_argc: usize,
 }
 
-impl ExpInd {}
+impl ExpInd {
+    fn new() -> ExpInd {
+        Self {
+            ty: 0,
+            num_params: 0,
+
+            rules: 0,
+            rule_nnrs: 0,
+            rule_nrs: 0,
+            num_rules: 0,
+            //elims: [usize; 5],
+            rec_body: 0,
+            //elim_body: usize,
+            elim_argc: 0,
+        }
+    }
+}
 
 const RULE_NULL: usize = 0;
 
@@ -232,6 +248,7 @@ pub struct ExpRule {
     extra2: usize,
     extra3: usize,
     extra4: usize,
+    extra5: usize,
     inductive: usize,
     ind_rule: usize,
     ind_ctor_quot: usize,
@@ -256,6 +273,7 @@ impl ExpRule {
             extra2: 0,
             extra3: 0,
             extra4: 0,
+            extra5: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -280,6 +298,7 @@ impl ExpRule {
             extra2: 0,
             extra3: 0,
             extra4: 0,
+            extra5: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -310,6 +329,7 @@ impl ExpRule {
             extra2: 0,
             extra3: 0,
             extra4: 0,
+            extra5: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -343,6 +363,7 @@ impl ExpRule {
             extra2: 0,
             extra3: 0,
             extra4: 0,
+            extra5: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -378,6 +399,7 @@ impl ExpRule {
             extra2: 0,
             extra3: 0,
             extra4: 0,
+            extra5: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -411,6 +433,7 @@ impl ExpRule {
             extra2: 0,
             extra3: 0,
             extra4: 0,
+            extra5: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -465,6 +488,7 @@ impl ExpRule {
             extra2: 0,
             extra3: 0,
             extra4: 0,
+            extra5: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -495,6 +519,7 @@ impl ExpRule {
             extra2: 0,
             extra3: 0,
             extra4: 0,
+            extra5: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -520,6 +545,7 @@ impl ExpRule {
             extra2: 0,
             extra3: 0,
             extra4: 0,
+            extra5: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -551,6 +577,7 @@ impl ExpRule {
             extra2: 0,
             extra3: 0,
             extra4: 0,
+            extra5: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -584,6 +611,7 @@ impl ExpRule {
             extra2: 0,
             extra3: 0,
             extra4: 0,
+            extra5: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -618,6 +646,7 @@ impl ExpRule {
             extra2: 0,
             extra3: 0,
             extra4: 0,
+            extra5: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -652,6 +681,7 @@ impl ExpRule {
             extra2: 0,
             extra3: 0,
             extra4: 0,
+            extra5: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -686,6 +716,7 @@ impl ExpRule {
             extra2: 0,
             extra3: 0,
             extra4: 0,
+            extra5: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -710,6 +741,7 @@ impl ExpRule {
             extra2: 0,
             extra3: 0,
             extra4: 0,
+            extra5: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -741,6 +773,7 @@ impl ExpRule {
             extra2: 0,
             extra3: 0,
             extra4: 0,
+            extra5: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -772,6 +805,7 @@ impl ExpRule {
             extra2: 0,
             extra3: 0,
             extra4: 0,
+            extra5: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -803,6 +837,7 @@ impl ExpRule {
             extra2: 0,
             extra3: 0,
             extra4: 0,
+            extra5: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -827,6 +862,7 @@ impl ExpRule {
             extra2: 0,
             extra3: 0,
             extra4: 0,
+            extra5: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -843,6 +879,7 @@ impl ExpRule {
         context: usize,
         num_nonrecs: usize,
         num_recs: usize,
+        apply_recs: usize,
         parent0: usize,
     ) -> ExpRule {
         ExpRule {
@@ -860,6 +897,7 @@ impl ExpRule {
             extra2: num_recs,
             extra3: rec,
             extra4: e_i,
+            extra5: apply_recs,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -895,6 +933,7 @@ impl ExpRule {
             extra2: num_recs,
             extra3: rec,
             extra4: e_i,
+            extra5: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -919,6 +958,7 @@ impl ExpRule {
             extra2: 0,
             extra3: 0,
             extra4: 0,
+            extra5: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -949,6 +989,7 @@ impl ExpRule {
             extra2: 0,
             extra3: 0,
             extra4: 0,
+            extra5: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot,
@@ -979,6 +1020,7 @@ impl ExpRule {
             extra2: 0,
             extra3: 0,
             extra4: 0,
+            extra5: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -1003,6 +1045,7 @@ impl ExpRule {
             extra2: elim,
             extra3: 0,
             extra4: 0,
+            extra5: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -1035,6 +1078,7 @@ impl ExpRule {
             extra2: 0,
             extra3: 0,
             extra4: 0,
+            extra5: 0,
             inductive,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -1068,6 +1112,7 @@ impl ExpRule {
             extra2: 0,
             extra3: 0,
             extra4: 0,
+            extra5: 0,
             inductive,
             ind_rule: ind_rule_idx,
             ind_ctor_quot: 0,
@@ -1105,6 +1150,7 @@ impl ExpRule {
             extra2: ind_elim,
             extra3: rec,
             extra4: 0,
+            extra5: 0,
             inductive,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -1136,6 +1182,7 @@ impl ExpRule {
             extra2: 0,
             extra3: 0,
             extra4: 0,
+            extra5: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -1167,6 +1214,7 @@ impl ExpRule {
             extra2: 0,
             extra3: 0,
             extra4: 0,
+            extra5: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -1198,6 +1246,7 @@ impl ExpRule {
             extra2: 0,
             extra3: 0,
             extra4: 0,
+            extra5: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -1222,6 +1271,7 @@ impl ExpRule {
             extra2: 0,
             extra3: 0,
             extra4: 0,
+            extra5: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -1537,6 +1587,18 @@ impl ZkInput {
     }
 
     fn compress(&mut self) {
+        // find rules that can convert to id...
+        let mut cnt = 0;
+        let mut marked = vec![false; self.rules.len()];
+        let mut idx_rewrite = vec![0; self.rules.len()];
+        for (i, rule) in self.rules.iter_mut().enumerate() {
+            if rule.input_term_idx == rule.result_term_idx && sim::is_eval_rule(rule.rule) {
+                rule.rule = RULE_EVAL_ID;
+                rule.parent0 = 0;
+                rule.parent1 = 0;
+                cnt += 1;
+            }
+        }
         // walk rules tree, sweep unused rules
         let mut marked = vec![false; self.rules.len()];
         let mut stack = vec![self.proving_rule];
@@ -1546,16 +1608,29 @@ impl ZkInput {
 
             marked[idx] = true;
 
-            let rule = &self.rules[self.proving_rule];
-            if rule.parent0 != 0 && rule.parent0 != idx {
+            let rule = &self.rules[idx];
+            if rule.parent0 != idx {
                 stack.push(rule.parent0);
             }
-            if rule.parent1 != 0 && rule.parent1 != idx {
+            if rule.parent1 != idx {
                 stack.push(rule.parent1);
             }
         }
 
-        println!("Got {} unused rules", marked.iter().filter(|x| **x).count());
+        let mut new_rules = Vec::new();
+        let mut pivote = Vec::new();
+        for (i, rule) in self.rules.iter().enumerate() {
+            if marked[i] {
+                new_rules.push(rule.clone());
+            }
+            pivote.push(new_rules.len() - 1);
+        }
+        for i in 0..new_rules.len() {
+            new_rules[i].parent0 = pivote[new_rules[i].parent0];
+            new_rules[i].parent1 = pivote[new_rules[i].parent1];
+        }
+        self.rules = new_rules;
+        self.proving_rule = pivote[self.proving_rule];
     }
 
     fn serialize_sized(
@@ -1578,6 +1653,7 @@ impl ZkInput {
         let empty_lift = ExpLift::lift(0, 0, 0, 0, 0, 0);
         let empty_term = ExpTerm::new(0, 0, 0, 0, 0, 0, 0);
         let empty_node = HashNode::empty();
+        let empty_ind = ExpInd::new();
 
         for i in 0..proof_size {
             let rule = self.rules.get(i).unwrap_or(&empty_rule);
@@ -1605,6 +1681,7 @@ impl ZkInput {
             result += &serialize_field("proof", Some(i), Some("extra2"), rule.extra2);
             result += &serialize_field("proof", Some(i), Some("extra3"), rule.extra3);
             result += &serialize_field("proof", Some(i), Some("extra4"), rule.extra4);
+            result += &serialize_field("proof", Some(i), Some("extra5"), rule.extra5);
             result += &serialize_field("proof", Some(i), Some("inductive"), rule.inductive);
             result += &serialize_field("proof", Some(i), Some("ind_rule"), rule.ind_rule);
             result += &serialize_field("proof", Some(i), Some("ind_ctor_quot"), rule.ind_ctor_quot);
@@ -1637,7 +1714,7 @@ impl ZkInput {
             );
         }
 
-        for (i, term) in self.terms.iter().enumerate() {
+        for i in 0..num_terms {
             let term = self.terms.get(i).unwrap_or(&empty_term);
             result += &serialize_field("terms", Some(i), Some("kind"), term.kind);
             result += &serialize_field("terms", Some(i), Some("name"), term.name);
@@ -1655,7 +1732,8 @@ impl ZkInput {
             result += &serialize_field("terms", Some(i), Some("ax"), term.ax);
         }
 
-        for (i, node) in self.contexts.nodes.iter().enumerate() {
+        for i in 0..context_size {
+            let node = self.contexts.nodes.get(i).unwrap_or(&empty_node);
             result += &serialize_field("contexts.nodes", Some(i), Some("key"), node.key);
             result += &serialize_field("contexts.nodes", Some(i), Some("value"), node.value);
             result += &serialize_field("contexts.nodes", Some(i), Some("prev"), node.prev);
@@ -1664,7 +1742,8 @@ impl ZkInput {
             result += &format!("(contexts.nodes.{}.empty {})\n", i, node.empty);
         }
 
-        for (i, node) in self.ind_rules.nodes.iter().enumerate() {
+        for i in 0..num_rules {
+            let node = self.ind_rules.nodes.get(i).unwrap_or(&empty_node);
             result += &serialize_field("rules.nodes", Some(i), Some("key"), node.key);
             result += &serialize_field("rules.nodes", Some(i), Some("value"), node.value);
             result += &serialize_field("rules.nodes", Some(i), Some("prev"), node.prev);
@@ -1673,7 +1752,8 @@ impl ZkInput {
             result += &format!("(rules.nodes.{}.empty {})\n", i, node.empty);
         }
 
-        for (i, node) in self.ind_nnrs.nodes.iter().enumerate() {
+        for i in 0..num_nnrs {
+            let node = self.ind_nnrs.nodes.get(i).unwrap_or(&empty_node);
             result += &serialize_field("rule_nnrs.nodes", Some(i), Some("key"), node.key);
             result += &serialize_field("rule_nnrs.nodes", Some(i), Some("value"), node.value);
             result += &serialize_field("rule_nnrs.nodes", Some(i), Some("prev"), node.prev);
@@ -1682,7 +1762,8 @@ impl ZkInput {
             result += &format!("(rule_nnrs.nodes.{}.empty {})\n", i, node.empty);
         }
 
-        for (i, node) in self.ind_nrs.nodes.iter().enumerate() {
+        for i in 0..num_nrs {
+            let node = self.ind_nrs.nodes.get(i).unwrap_or(&empty_node);
             result += &serialize_field("rule_nrs.nodes", Some(i), Some("key"), node.key);
             result += &serialize_field("rule_nrs.nodes", Some(i), Some("value"), node.value);
             result += &serialize_field("rule_nrs.nodes", Some(i), Some("prev"), node.prev);
@@ -1691,7 +1772,8 @@ impl ZkInput {
             result += &format!("(rule_nrs.nodes.{}.empty {})\n", i, node.empty);
         }
 
-        for (i, term) in self.public_terms.iter().enumerate() {
+        for i in 0..num_pub_terms {
+            let term = self.public_terms.get(i).unwrap_or(&empty_term);
             result += &serialize_field("public_terms", Some(i), Some("kind"), term.kind);
             result += &serialize_field("public_terms", Some(i), Some("name"), term.name);
             result += &serialize_field("public_terms", Some(i), Some("left"), term.left);
@@ -1708,7 +1790,8 @@ impl ZkInput {
             result += &serialize_field("public_terms", Some(i), Some("ax"), term.ax);
         }
 
-        for (i, ind) in self.inductives.iter().enumerate() {
+        for i in 0..num_inds {
+            let ind = self.inductives.get(i).unwrap_or(&empty_ind);
             result += &serialize_field("inductives", Some(i), Some("ty"), ind.ty);
             result += &serialize_field("inductives", Some(i), Some("num_params"), ind.num_params);
             result += &serialize_field("inductives", Some(i), Some("rules"), ind.rules);
@@ -1719,12 +1802,9 @@ impl ZkInput {
             result += &serialize_field("inductives", Some(i), Some("elim_argc"), ind.elim_argc);
         }
 
-        for i in 0..self.axioms.len() {
-            result += &serialize_field("axioms", Some(i), None, self.axioms[i]);
-        }
-        // unsound but placeholder...
-        if self.axioms.len() == 0 {
-            result += &serialize_field("axioms", Some(0), None, 0);
+        for i in 0..num_inds {
+            let ax = self.axioms.get(i).unwrap_or(&0);
+            result += &serialize_field("axioms", Some(i), None, *ax);
         }
 
         result += &format!("(expected_type #f{})\n", self.expected_type);
@@ -1738,16 +1818,16 @@ impl ZkInput {
 
     fn serialize(&self) -> String {
         self.serialize_sized(
-            self.rules.len(),
-            self.terms.len(),
-            self.contexts.nodes.len(),
-            self.lifts.len(),
-            self.inductives.len(),
-            self.public_terms.len(),
-            self.ind_rules.nodes.len(),
-            self.ind_nnrs.len(),
-            self.ind_nrs.len(),
-            self.axioms.len(),
+            max(self.rules.len(), 1),
+            max(self.terms.len(), 1),
+            max(self.contexts.nodes.len(), 1),
+            max(self.lifts.len(), 1),
+            max(self.inductives.len(), 1),
+            max(self.public_terms.len(), 1),
+            max(self.ind_rules.nodes.len(), 1),
+            max(self.ind_nnrs.len(), 1),
+            max(self.ind_nrs.len(), 1),
+            max(self.axioms.len(), 1),
         )
     }
 }
@@ -1772,6 +1852,7 @@ pub struct Exporter {
 
     inductives: HashMap<String, Inductive>,
 
+    axioms: Option<HashMap<String, Term>>,
     axiom_mapping: HashMap<String, (usize, usize)>,
     ax_test: HashMap<usize, usize>,
     axiom_rev_mapping: HashMap<(usize, usize), String>,
@@ -1799,6 +1880,7 @@ impl Exporter {
 
             inductives: HashMap::new(),
 
+            axioms: None,
             axiom_mapping: HashMap::new(),
             ax_test: HashMap::new(),
             axiom_rev_mapping: HashMap::new(),
@@ -1825,9 +1907,10 @@ impl Exporter {
         let mut exp = Exporter::new();
 
         exp.inductives = inductives;
+        exp.axioms = Some(axioms);
 
-        for (name, term) in &axioms {
-            exp.add_axiom_term(name.to_string(), term.clone(), &axioms);
+        for (name, term) in exp.axioms.clone().unwrap() {
+            exp.add_axiom_term(name.to_string(), term.clone());
         }
 
         //println!("adding inductives...");
@@ -1836,7 +1919,7 @@ impl Exporter {
         ////}
         //println!("done");
 
-        let term = exp.export_term(expected_type, 0, None);
+        let term = exp.export_term(expected_type, 0);
 
         for t in &exp.zk_input.terms {
             exp.zk_input.public_terms.push(t.clone());
@@ -1848,7 +1931,7 @@ impl Exporter {
 
     fn add_inductive(&mut self, inductive: &Inductive) {
         //println!("exporting ty for ind {}", inductive.name);
-        let ind_type = self.export_term(inductive.ty.clone(), 0, None);
+        let ind_type = self.export_term(inductive.ty.clone(), 0);
         let ind = ExpInd {
             ty: ind_type,
             num_params: inductive.num_params,
@@ -1873,7 +1956,7 @@ impl Exporter {
             //    inductive.rules[i].name, inductive.name
             //);
             // TODO: need to add inductive for proper type...
-            let rule_term = self.export_term(inductive.rules[i].ty.clone(), 0, None);
+            let rule_term = self.export_term(inductive.rules[i].ty.clone(), 0);
             rule_list = self.zk_input.ind_rules.add(rule_list, i, rule_term);
             nnr_list = self.zk_input.ind_nnrs.add(
                 nnr_list,
@@ -1903,35 +1986,10 @@ impl Exporter {
         //println!("rec term for {} is: {}", inductive.name, inductive.elim(0));
 
         // add "bindings" for ind params and motive...
-        let rec_zk_body = self.export_term(rec_body.clone(), inductive.num_params + 1, None);
+        let rec_zk_body = self.export_term(rec_body.clone(), inductive.num_params + 1);
         let mut_zk_ind = self.get_zk_ind_mut(ind_idx);
         mut_zk_ind.rec_body = rec_zk_body;
         mut_zk_ind.elim_argc = rec_body.params().len() + inductive.num_params + 1;
-    }
-
-    fn new_with_eval(eval: Evaluator) -> Exporter {
-        Exporter {
-            eval,
-            zk_input: ZkInput::new(),
-
-            inductives: HashMap::new(),
-
-            axiom_mapping: HashMap::new(),
-            ax_test: HashMap::new(),
-            axiom_rev_mapping: HashMap::new(),
-
-            // TODO
-            inductive_mapping: HashMap::new(),
-            inductive_rule_mapping: HashMap::new(),
-            ind_rev_map: HashMap::new(),
-
-            term_cache: HashMap::new(),
-            zk_term_cache: HashMap::new(),
-            zk_rule_cache: HashMap::new(),
-            zk_lift_cache: HashMap::new(),
-
-            zk_term_free_bindings: HashMap::new(),
-        }
     }
 
     // TODO: add exp again
@@ -2027,7 +2085,6 @@ impl Exporter {
 
         //println!("exp_axioms: {:?}", exporter.axiom_mapping);
         let simplified_val = eval.eval(theorem.val.clone()).unwrap();
-        let simplified_ty = eval.eval(theorem.ty.clone()).unwrap();
         //println!("proving: {:?} :: {:?}", simplified_val, simplified_ty);
         let rule = exporter.export_ty_term(simplified_val)?;
         let result_type = exporter.get_zk_rule(rule).result_term_idx;
@@ -2064,6 +2121,7 @@ impl Exporter {
         //    exporter.zk_input.inductives.len(),
         //    exporter.zk_input.public_terms.len(),
         //);
+        exporter.zk_input.compress();
 
         Ok(exporter.zk_input.serialize())
     }
@@ -2073,12 +2131,12 @@ impl Exporter {
         let mut eval = Evaluator::new(&theorem.axioms, theorem.inductives.clone());
         let mut axioms = theorem.axioms;
 
-        let simplified_ty = eval.eval(theorem.ty.clone()).unwrap();
-        let mut exporter = Exporter::with_axioms(simplified_ty, axioms, theorem.inductives);
+        //let simplified_ty = eval.eval(theorem.ty.clone()).unwrap();
+        let mut exporter = Exporter::with_axioms(theorem.ty.clone(), axioms, theorem.inductives);
 
-        let simplified_val = eval.eval(theorem.val.clone()).unwrap();
-        let simplified_ty = eval.eval(theorem.ty.clone()).unwrap();
-        let rule = exporter.export_ty_term(simplified_val)?;
+        //let simplified_val = eval.eval(theorem.val.clone()).unwrap();
+        //let simplified_ty = eval.eval(theorem.ty.clone()).unwrap();
+        let rule = exporter.export_ty_term(theorem.val.clone())?;
         let result_type = exporter.get_zk_rule(rule).result_term_idx;
 
         if result_type != exporter.zk_input.expected_type {
@@ -2103,6 +2161,8 @@ impl Exporter {
         } else {
             exporter.zk_input.proving_rule = rule;
         }
+
+        exporter.zk_input.compress();
 
         Ok(exporter.zk_input)
     }
@@ -2235,16 +2295,6 @@ impl Exporter {
         let num_args = self.argc(input_idx);
 
         if num_args == inductive.elim_argc {
-            //println!("\nBEGIN -----------");
-            //println!(
-            //    "Evaluating term: {}",
-            //    term_to_string(
-            //        input_idx,
-            //        &self.zk_input.terms,
-            //        &self.axiom_rev_mapping,
-            //        &self.ind_rev_map
-            //    )
-            //);
             let arg = self.get_zk_term(input.right).clone();
             let ind_ctor = self.get_zk_term(arg.top_level_func).clone();
             //println!(
@@ -2272,15 +2322,6 @@ impl Exporter {
                 )
                 .unwrap();
             let elim_term_idx = self.get_zk_rule(get_elim_rule_idx).result_term_idx;
-            //println!(
-            //    "elim is {:?}",
-            //    term_to_string(
-            //        elim_term_idx,
-            //        &self.zk_input.terms,
-            //        &self.axiom_rev_mapping,
-            //        &self.ind_rev_map
-            //    )
-            //);
 
             let (nnrs, nnr_quot) = self
                 .zk_input
@@ -2288,7 +2329,7 @@ impl Exporter {
                 .get(inductive.rule_nnrs, ind_ctor.ind_ctor);
             let (nrs, nr_quot) = self
                 .zk_input
-                .ind_nnrs
+                .ind_nrs
                 .get(inductive.rule_nrs, ind_ctor.ind_ctor);
             let apply_elim_eval = self
                 .export_apply_elim_eval(
@@ -2358,6 +2399,22 @@ impl Exporter {
                 sub2_idx,
             );
 
+            //println!(
+            //    "eval ind: {} => {}",
+            //    term_to_string(
+            //        input_idx,
+            //        &self.zk_input.terms,
+            //        &self.axiom_rev_mapping,
+            //        &self.ind_rev_map
+            //    ),
+            //    term_to_string(
+            //        rule.result_term_idx,
+            //        &self.zk_input.terms,
+            //        &self.axiom_rev_mapping,
+            //        &self.ind_rev_map
+            //    )
+            //);
+
             return Ok(self.add_zk_rule(rule));
         }
 
@@ -2377,11 +2434,20 @@ impl Exporter {
         rec_params: usize,
     ) -> Result<usize, String> {
         //println!("begin eval elim");
-        let apply_elim_rule =
-            self.export_apply_elim(input_idx, rec_idx, elim_idx, nonrec_params, rec_params)?;
+        let apply_elim_rule = self.export_apply_elim(
+            input_idx,
+            rec_idx,
+            elim_idx,
+            input_idx,
+            nonrec_params,
+            rec_params,
+            rec_params,
+        )?;
         let res = self.get_zk_rule(apply_elim_rule).result_term_idx;
         //println!(
-        //    "trace eval elim (max binding: {}): {} => {}",
+        //    "trace eval elim ({} {}) (max binding: {}): {} => {}",
+        //    nonrec_params,
+        //    rec_params,
         //    max_binding,
         //    term_to_string(
         //        input_idx,
@@ -2436,8 +2502,10 @@ impl Exporter {
         input_idx: usize,
         rec_idx: usize,  // recursor
         elim_idx: usize, // the elim we resolve to
+        orig_idx: usize,
         nonrec_params: usize,
         rec_params: usize,
+        rec_applies: usize,
     ) -> Result<usize, String> {
         let input = self.get_zk_term(input_idx).clone();
 
@@ -2458,6 +2526,7 @@ impl Exporter {
                 0,
                 0,
                 0,
+                0,
             );
             Ok(self.add_zk_rule(rule))
         //  elim_apply (nnr-1) 0 e_i rec f => f'
@@ -2467,8 +2536,15 @@ impl Exporter {
             assert!(input.kind == EXPR_APP);
             let f = input.left;
             let e = input.right;
-            let parent0_idx =
-                self.export_apply_elim(f, rec_idx, elim_idx, nonrec_params - 1, rec_params)?;
+            let parent0_idx = self.export_apply_elim(
+                f,
+                rec_idx,
+                elim_idx,
+                orig_idx,
+                nonrec_params - 1,
+                rec_params,
+                0,
+            )?;
             let fp = self.get_zk_rule(parent0_idx).result_term_idx;
             let fp_tlf = self.get_zk_term(fp).top_level_func;
             let result_term = ExpTerm::app(fp, e, fp_tlf);
@@ -2478,6 +2554,7 @@ impl Exporter {
             //     self.export_eval(app_fp_e_idx, HashList::EMPTY, &mut HashMap::new(), 0);
             //let result_idx = self.get_zk_rule(parent1_idx).result_term_idx;
 
+            // TODO
             let rule = ExpRule::apply_elim(
                 input_idx,
                 result_idx,
@@ -2486,20 +2563,85 @@ impl Exporter {
                 HashList::EMPTY,
                 nonrec_params,
                 rec_params,
+                0,
                 parent0_idx,
             );
             Ok(self.add_zk_rule(rule))
 
-        // elim_apply nnr (nr-1) e_i rec f => f'
-        // ----------------------------------------------    (apply_rec)
-        //  elim_apply nnr nr e_i (f e) => (f' (rec e))
+        // elim_apply nnr (nr-1) 0 o e_i rec f => f'
+        // ----------------------------------------------    (apply_nr)
+        //  elim_apply nnr nr 0 o e_i (f e) => (f' e)
+        } else if rec_applies == 0 {
+            assert!(input.kind == EXPR_APP);
+
+            assert!(input.kind == EXPR_APP);
+            let f = input.left;
+            let e = input.right;
+            let parent0_idx = self.export_apply_elim(
+                f,
+                rec_idx,
+                elim_idx,
+                orig_idx,
+                nonrec_params,
+                rec_params - 1,
+                0,
+            )?;
+            let fp = self.get_zk_rule(parent0_idx).result_term_idx;
+            let fp_tlf = self.get_zk_term(fp).top_level_func;
+            let result_term = ExpTerm::app(fp, e, fp_tlf);
+            let result_idx = self.add_zk_term(result_term);
+
+            // let parent1_idx =
+            //     self.export_eval(app_fp_e_idx, HashList::EMPTY, &mut HashMap::new(), 0);
+            //let result_idx = self.get_zk_rule(parent1_idx).result_term_idx;
+
+            // TODO
+            let rule = ExpRule::apply_elim(
+                input_idx,
+                result_idx,
+                rec_idx,
+                elim_idx,
+                HashList::EMPTY,
+                nonrec_params,
+                rec_params,
+                0,
+                parent0_idx,
+            );
+            Ok(self.add_zk_rule(rule))
+
+            // elim_apply nnr nr 0 o e_i rec o => o'
+            // ----------------------------------------------    (apply_rec)
+            //  elim_apply nnr nr 1 o e_i (f e) => (o' (rec e))
+            //
+            // elim_apply nnr nr (recs-1) o e_i rec f => f'
+            // ----------------------------------------------    (apply_rec)
+            //  elim_apply nnr nr recs o e_i (f e) => (f' (rec e))
         } else {
             assert!(input.kind == EXPR_APP);
 
             let f = input.left;
             let e = input.right;
-            let parent0_idx =
-                self.export_apply_elim(f, rec_idx, elim_idx, nonrec_params, rec_params - 1)?;
+            let parent0_idx = if rec_applies == 1 {
+                self.export_apply_elim(
+                    orig_idx,
+                    rec_idx,
+                    elim_idx,
+                    orig_idx,
+                    nonrec_params,
+                    rec_params,
+                    0,
+                )?
+            } else {
+                self.export_apply_elim(
+                    f,
+                    rec_idx,
+                    elim_idx,
+                    orig_idx,
+                    nonrec_params,
+                    rec_params,
+                    rec_applies - 1,
+                )?
+            };
             let fp = self.get_zk_rule(parent0_idx).result_term_idx;
             let fp_tlf = self.get_zk_term(fp).top_level_func;
 
@@ -2510,6 +2652,7 @@ impl Exporter {
             let app_fp_rec = ExpTerm::app(fp, app_rec_e_idx, fp_tlf);
             let result_idx = self.add_zk_term(app_fp_rec);
 
+            // TODO:
             let rule = ExpRule::apply_elim(
                 input_idx,
                 result_idx,
@@ -2518,6 +2661,7 @@ impl Exporter {
                 HashList::EMPTY,
                 nonrec_params,
                 rec_params,
+                rec_applies,
                 parent0_idx,
             );
             Ok(self.add_zk_rule(rule))
@@ -2753,6 +2897,23 @@ impl Exporter {
             //let sub2 = ExpRule::eval_eta_sub2(result_type,
         }
 
+        // eta expansion on result
+        let res_body = self.get_zk_term(result.right).clone();
+        let res_body_right = self.get_zk_term(res_body.right).clone();
+        if result.kind == EXPR_LAM
+            && res_body.kind == EXPR_APP
+            && res_body.left == result_type
+            && res_body_right.kind == EXPR_VAR
+            && res_body_right.name == expected.name
+        {
+            panic!("eta unsupported");
+            // TODO:
+            //let eval_exp = ExpRule::eval_id(expected_type, zk_context, max_binding);
+            //let eval_exp_idx = self.add_zk_rule(eval_exp);
+
+            //let sub2 = ExpRule::eval_eta_sub2(result_type,
+        }
+
         let rule = match (result.kind, expected.kind) {
             (EXPR_PI, EXPR_PI) | (EXPR_LAM, EXPR_LAM) => {
                 let res_dom = result.left;
@@ -2928,6 +3089,21 @@ impl Exporter {
                         sub1_idx,
                     )
                 } else {
+                    //println!(
+                    //    "Expected: {}\n\nGot: {}\n",
+                    //    term_to_string(
+                    //        result_type,
+                    //        &self.zk_input.terms,
+                    //        &self.axiom_rev_mapping,
+                    //        &self.ind_rev_map
+                    //    ),
+                    //    term_to_string(
+                    //        expected_type,
+                    //        &self.zk_input.terms,
+                    //        &self.axiom_rev_mapping,
+                    //        &self.ind_rev_map
+                    //    ),
+                    //);
                     return Err("oof".to_string());
                 }
             }
@@ -2936,29 +3112,26 @@ impl Exporter {
         Ok(self.add_zk_rule(rule))
     }
 
-    fn add_axiom_term(&mut self, name: String, term: Term, axioms: &HashMap<String, Term>) {
-        let term = self.export_term(term, 0, Some(axioms));
+    fn add_axiom_term(&mut self, name: String, term: Term) {
+        let term = self.export_term(term, 0);
 
         if !self.axiom_mapping.contains_key(&name) {
-            let new_tag = if let Some(tag) = self.ax_test.get(&term) {
-                tag + 1
-            } else {
-                0
-            };
-            self.axiom_mapping.insert(name.clone(), (term, new_tag));
-            self.axiom_rev_mapping.insert((term, new_tag), name);
-            self.ax_test.insert(term, new_tag);
+            self.zk_input.axioms.push(term);
+            let ax_num = self.zk_input.axioms.len() - 1;
+            self.axiom_mapping.insert(name.clone(), (ax_num, 0));
+            self.axiom_rev_mapping.insert((ax_num, 0), name);
+            self.ax_test.insert(ax_num, 0);
         }
     }
 
     pub fn export_eval_term(&mut self, input: Term) -> usize {
-        let term = self.export_term(input, 0, None);
+        let term = self.export_term(input, 0);
         self.export_eval(term, HashList::EMPTY, &mut HashMap::new(), 0)
     }
 
     pub fn export_ty_term(&mut self, input: Term) -> Result<usize, String> {
         //println!("exporting: {}", input);
-        let term = self.export_term(input, 0, None);
+        let term = self.export_term(input, 0);
         //println!("-----------------------------------");
         self.export_ty(term, HashList::EMPTY, &mut HashMap::new(), 0)
     }
@@ -3126,7 +3299,9 @@ impl Exporter {
                     //println!("name is {:?}", name);
                     let body = f_term.right;
                     context.insert(name, e_result);
-                    let new_context = self.zk_context_insert(f_subs, name, e_result);
+                    let inserted_ctx = self.zk_context_insert(zk_context, name, e_result);
+                    let (new_context, new_context_quot) =
+                        self.split_zk_context(inserted_ctx, body, context);
                     let value_rule = self.export_eval(body, new_context, context, max_binding + 1);
                     //let value_idx = self.export_eval(
                     context.remove(&name);
@@ -3143,7 +3318,7 @@ impl Exporter {
                         e_rule,
                         e_quot,
                         value_rule,
-                        new_context,
+                        new_context_quot,
                         lift_rule,
                         max_binding,
                         e,
@@ -3308,16 +3483,6 @@ impl Exporter {
         let input = self.get_zk_term(input_idx).clone();
         //let expected = self.get_zk_term(expected_idx).clone();
 
-        //println!(
-        //    "exp ty: (max binding: {}), {}",
-        //    max_binding,
-        //    term_to_string(
-        //        input_idx,
-        //        &self.zk_input.terms,
-        //        &self.axiom_rev_mapping,
-        //        &self.ind_rev_map
-        //    )
-        //);
         let zk_rule = match input.kind {
             // TODO: make sure that we use levels in the circuit, but indicies out here...
             EXPR_VAR => {
@@ -3375,12 +3540,6 @@ impl Exporter {
                 let (f_subs, f_quot) = self.split_zk_context(zk_context, f, context);
                 let mut f_rule = self.export_ty(f, f_subs, context, max_binding)?;
                 let mut f_result = self.get_zk_rule(f_rule).result_term_idx;
-                //println!(
-                //    "f_result: {} (idx: {})",
-                //    term_to_string(f_result, &self.zk_input.terms, &self.axiom_rev_mapping),
-                //    self.get_zk_rule(f_rule).result_term_idx
-                //);
-
                 let (e_subs, e_quot) = self.split_zk_context(zk_context, e, context);
                 //println!(
                 //    "e_subs: {:?}, e_quot: {:?}",
@@ -3424,7 +3583,16 @@ impl Exporter {
 
                 // this probably means we need to resolve a rec.....................
                 // ultimate sadness
-                if f_ty.kind != EXPR_PI {
+                while f_ty.kind != EXPR_PI {
+                    //println!(
+                    //    "f_result: {:?}",
+                    //    term_to_string(
+                    //        self.get_zk_rule(f_rule).input_term_idx,
+                    //        &self.zk_input.terms,
+                    //        &self.axiom_rev_mapping,
+                    //        &self.ind_rev_map
+                    //    ),
+                    //);
                     // try to evaluate the recursors fully
                     // Just do domain for now
                     let rule_idx = self.try_unify_recs(
@@ -3537,8 +3705,42 @@ impl Exporter {
                 let mut domain_ty = f_ty.left;
                 let body_ty = f_ty.right;
 
+                //println!(
+                //    "START TYPE UNIF: TERM: {}\n\nF: {}\nE: {}\nDOMAIN_TY: {}\nE_TYPE: {}\n\n",
+                //    term_to_string(
+                //        input_idx,
+                //        &self.zk_input.terms,
+                //        &self.axiom_rev_mapping,
+                //        &self.ind_rev_map
+                //    ),
+                //    term_to_string(
+                //        f,
+                //        &self.zk_input.terms,
+                //        &self.axiom_rev_mapping,
+                //        &self.ind_rev_map
+                //    ),
+                //    term_to_string(
+                //        e,
+                //        &self.zk_input.terms,
+                //        &self.axiom_rev_mapping,
+                //        &self.ind_rev_map
+                //    ),
+                //    term_to_string(
+                //        domain_ty,
+                //        &self.zk_input.terms,
+                //        &self.axiom_rev_mapping,
+                //        &self.ind_rev_map
+                //    ),
+                //    term_to_string(
+                //        e_result,
+                //        &self.zk_input.terms,
+                //        &self.axiom_rev_mapping,
+                //        &self.ind_rev_map
+                //    )
+                //);
                 // if the types aren't equal...attempt to unify
                 while domain_ty != e_result {
+                    //println!("LOOP ITER");
                     // fast case ... try to unify first
                     if let Ok(eval_rule) = self.export_unify_helper(
                         e_result,
@@ -3552,6 +3754,15 @@ impl Exporter {
                         e_rule = self.add_zk_rule(ty_rule);
                         break;
                     } else {
+                        //println!(
+                        //    "TRY UNIFY DOMAIN TY IS: {}",
+                        //    term_to_string(
+                        //        domain_ty,
+                        //        &self.zk_input.terms,
+                        //        &self.axiom_rev_mapping,
+                        //        &self.ind_rev_map
+                        //    )
+                        //);
                         // try to evaluate the recursors fully
                         // Just do domain for now
                         let rule_idx = self.try_unify_recs(
@@ -3747,36 +3958,143 @@ impl Exporter {
                             domain_ty = final_eval_rule.result_term_idx;
                             //panic!();
                         } else {
+                            let eval_e_idx = self.export_eval(
+                                e,
+                                HashList::EMPTY,
+                                &mut HashMap::new(),
+                                max_binding,
+                            );
+                            let eval_e = self.get_zk_rule(eval_e_idx).clone();
+                            // try to evaluate the recursors fully
+                            // Just do domain for now
+                            let rule_idx = self.try_unify_recs(
+                                eval_e.result_term_idx,
+                                HashList::EMPTY,
+                                &mut HashMap::new(),
+                                max_binding,
+                            );
                             //println!(
-                            //    "TYPING ERROR: ctx: {}, ORIG: {}\n\nFULL TY: {}\n\n {} \n\n {} \n\n{:?}",
-                            //    self.zk_input.contexts.to_string(zk_context),
+                            //    "E EVAL GOT: {}",
                             //    term_to_string(
-                            //        input_idx,
+                            //        eval_e.result_term_idx,
                             //        &self.zk_input.terms,
                             //        &self.axiom_rev_mapping,
                             //        &self.ind_rev_map
                             //    ),
-                            //    term_to_string(
-                            //        f_result,
-                            //        &self.zk_input.terms,
-                            //        &self.axiom_rev_mapping,
-                            //        &self.ind_rev_map
-                            //    ),
-                            //    term_to_string(
-                            //        domain_ty,
-                            //        &self.zk_input.terms,
-                            //        &self.axiom_rev_mapping,
-                            //        &self.ind_rev_map
-                            //    ),
-                            //    term_to_string(
-                            //        e_result,
-                            //        &self.zk_input.terms,
-                            //        &self.axiom_rev_mapping,
-                            //        &self.ind_rev_map
-                            //    ),
-                            //    rule_idx
                             //);
-                            return Err(format!("Typing error:"));
+                            if rule_idx.is_ok() {
+                                let rule_idx = rule_idx.clone().unwrap();
+                                let rule = self.get_zk_rule(rule_idx).clone();
+                                //println!(
+                                //    "E REC GOT: {}",
+                                //    term_to_string(
+                                //        rule.result_term_idx,
+                                //        &self.zk_input.terms,
+                                //        &self.axiom_rev_mapping,
+                                //        &self.ind_rev_map
+                                //    ),
+                                //);
+                            }
+
+                            // evall...
+                            let eval_erule_idx = self.export_eval(
+                                e_result,
+                                HashList::EMPTY,
+                                &mut HashMap::new(),
+                                max_binding,
+                            );
+                            let eval_e_rule = self.get_zk_rule(eval_erule_idx).clone();
+                            let e_rule_ty = ExpRule::eval_ty(
+                                e,
+                                eval_e_rule.result_term_idx,
+                                HashList::EMPTY,
+                                max_binding,
+                                e_rule,
+                                eval_erule_idx,
+                            );
+                            e_rule = self.add_zk_rule(e_rule_ty);
+                            e_result = eval_e_rule.result_term_idx;
+
+                            let mut curr_e_res = e_result;
+                            let mut curr_e_rule = e_rule;
+                            loop {
+                                //println!(
+                                //    "TRY UNIFY E TY IS: {}",
+                                //    term_to_string(
+                                //        curr_e_res,
+                                //        &self.zk_input.terms,
+                                //        &self.axiom_rev_mapping,
+                                //        &self.ind_rev_map
+                                //    )
+                                //);
+                                let rule_idx = self.try_unify_recs(
+                                    curr_e_res,
+                                    HashList::EMPTY,
+                                    &mut HashMap::new(),
+                                    max_binding,
+                                );
+                                if rule_idx.is_ok() {
+                                    let rule_idx = rule_idx.clone().unwrap();
+                                    let rule = self.get_zk_rule(rule_idx).clone();
+                                    // println!(
+                                    //     "E REC GOT: {}",
+                                    //     term_to_string(
+                                    //         rule.result_term_idx,
+                                    //         &self.zk_input.terms,
+                                    //         &self.axiom_rev_mapping,
+                                    //         &self.ind_rev_map
+                                    //     ),
+                                    // );
+                                    curr_e_res = rule.result_term_idx;
+                                    let e_rule_new = ExpRule::eval_ty(
+                                        e,
+                                        rule.result_term_idx,
+                                        HashList::EMPTY,
+                                        max_binding,
+                                        e_rule,
+                                        rule_idx,
+                                    );
+                                    e_rule = self.add_zk_rule(e_rule_new);
+                                    if let Ok(eval_rule) = self.export_unify_helper(
+                                        curr_e_res,
+                                        domain_ty,
+                                        zk_context,
+                                        context,
+                                        max_binding,
+                                    ) {
+                                        let ty_rule = ExpRule::eval_ty(
+                                            e, domain_ty, e_subs, 0, e_rule, eval_rule,
+                                        );
+
+                                        e_rule = self.add_zk_rule(ty_rule);
+                                        e_result = domain_ty;
+                                        break;
+                                    }
+                                } else {
+                                    //println!(
+                                    //    "Expected: {}\n\nGot: {}\n\nE: {}",
+                                    //    term_to_string(
+                                    //        domain_ty,
+                                    //        &self.zk_input.terms,
+                                    //        &self.axiom_rev_mapping,
+                                    //        &self.ind_rev_map
+                                    //    ),
+                                    //    term_to_string(
+                                    //        e_result,
+                                    //        &self.zk_input.terms,
+                                    //        &self.axiom_rev_mapping,
+                                    //        &self.ind_rev_map
+                                    //    ),
+                                    //    term_to_string(
+                                    //        e,
+                                    //        &self.zk_input.terms,
+                                    //        &self.axiom_rev_mapping,
+                                    //        &self.ind_rev_map
+                                    //    ),
+                                    //);
+                                    return Err(format!("Typing error:"));
+                                }
+                            }
                         }
                     }
                 }
@@ -3935,7 +4253,8 @@ impl Exporter {
                 )
             }
             EXPR_AX => {
-                let lift_rule = self.export_lift(input.left, max_binding, ExpTerm::MAX_BINDING);
+                let term = self.zk_input.axioms[input.ax];
+                let lift_rule = self.export_lift(term, max_binding, ExpTerm::MAX_BINDING);
                 let lift_res = self.get_zk_lift(lift_rule).result_term_idx;
 
                 //assert_eq!(
@@ -3974,7 +4293,7 @@ impl Exporter {
                 let num_type_params = ind.num_params;
 
                 let motive_term = ind.generate_motive(motive_sort);
-                let motive_zk_term = self.export_term(motive_term, num_type_params, None);
+                let motive_zk_term = self.export_term(motive_term, num_type_params);
                 let rec_body = zk_ind.rec_body;
 
                 // TODO: check name
@@ -3982,7 +4301,7 @@ impl Exporter {
                 let mut rec_idx = self.add_zk_term(rec_term);
 
                 for (i, ty) in ind.ty.params()[..num_type_params].iter().enumerate().rev() {
-                    let ty_idx = self.export_term(ty.clone(), i, None);
+                    let ty_idx = self.export_term(ty.clone(), i);
                     rec_term = ExpTerm::pi(i, ty_idx, rec_idx);
                     rec_idx = self.add_zk_term(rec_term);
                 }
@@ -3996,7 +4315,7 @@ impl Exporter {
                 //        &self.ind_rev_map
                 //    )
                 //);
-                let ind_ty_idx = self.export_term(ind.ty, 0, None);
+                let ind_ty_idx = self.export_term(ind.ty, 0);
 
                 let pref_rule =
                     self.export_ind_pref(rec_idx, ind_ty_idx, num_type_params, rec_body)?;
@@ -4013,21 +4332,21 @@ impl Exporter {
             }
         };
 
-        //println!(
-        //    "trace ty: {} :: {}",
-        //    term_to_string(
-        //        input_idx,
-        //        &self.zk_input.terms,
-        //        &self.axiom_rev_mapping,
-        //        &self.ind_rev_map
-        //    ),
-        //    term_to_string(
-        //        zk_rule.result_term_idx,
-        //        &self.zk_input.terms,
-        //        &self.axiom_rev_mapping,
-        //        &self.ind_rev_map
-        //    )
-        //);
+        // println!(
+        //     "trace ty: {} :: {}",
+        //     term_to_string(
+        //         input_idx,
+        //         &self.zk_input.terms,
+        //         &self.axiom_rev_mapping,
+        //         &self.ind_rev_map
+        //     ),
+        //     term_to_string(
+        //         zk_rule.result_term_idx,
+        //         &self.zk_input.terms,
+        //         &self.axiom_rev_mapping,
+        //         &self.ind_rev_map
+        //     )
+        // );
 
         Ok(self.add_zk_rule(zk_rule))
     }
@@ -4369,12 +4688,7 @@ impl Exporter {
         self.zk_input.contexts.split(zk_context, subset)
     }
 
-    pub fn export_term(
-        &mut self,
-        term: Term,
-        num_bindings: usize,
-        axioms: Option<&HashMap<String, Term>>,
-    ) -> usize {
+    pub fn export_term(&mut self, term: Term, num_bindings: usize) -> usize {
         //println!("exporting: {}", term);
         if let Some(index) = self.term_cache.get(&(term.clone(), num_bindings)) {
             return *index;
@@ -4389,8 +4703,8 @@ impl Exporter {
             }
             TermData::Sort(level) => ExpTerm::sort(*level),
             TermData::Binding(BindingData { ty, domain, body }) => {
-                let body_idx = self.export_term(body.clone(), num_bindings + 1, axioms);
-                let domain_idx = self.export_term(domain.clone(), num_bindings, axioms);
+                let body_idx = self.export_term(body.clone(), num_bindings + 1);
+                let domain_idx = self.export_term(domain.clone(), num_bindings);
                 match ty {
                     // TODO: names
                     BindingType::Lam => ExpTerm::lam(num_bindings, domain_idx, body_idx),
@@ -4398,9 +4712,9 @@ impl Exporter {
                 }
             }
             TermData::App(f, e) => {
-                let f_idx = self.export_term(f.clone(), num_bindings, axioms);
+                let f_idx = self.export_term(f.clone(), num_bindings);
                 let f_term = self.get_zk_term(f_idx).clone();
-                let e_idx = self.export_term(e.clone(), num_bindings, axioms);
+                let e_idx = self.export_term(e.clone(), num_bindings);
 
                 ExpTerm::app(f_idx, e_idx, f_term.top_level_func)
             }
@@ -4409,18 +4723,18 @@ impl Exporter {
                 if let Some((ax, tag)) = self.axiom_mapping.get(name) {
                     ExpTerm::ax(*ax, *tag)
                 } else {
-                    if let Some(axioms_map) = axioms {
+                    if let Some(axioms_map) = &self.axioms {
                         let term = axioms_map
                             .get(name)
                             .expect(&format!("Couldn't find axiom named: {}", name));
                         //println!("Adding axiom term: {}", name);
-                        self.add_axiom_term(name.to_string(), term.clone(), axioms_map);
+                        self.add_axiom_term(name.to_string(), term.clone());
                         //println!("Done with axiom term: {}", name);
                         //let zk_term = self.export_term(term.clone(), 0, axioms);
                         let (ax, tag) = *self.axiom_mapping.get(name).unwrap();
                         ExpTerm::ax(ax, tag)
                     } else {
-                        panic!("Couldn't fine axioms named: {}", name);
+                        panic!("Couldn't find axiom named: {}", name);
                     }
                 }
             }
@@ -4712,20 +5026,22 @@ pub fn term_to_string(
             let e = term_to_string(term.right, terms, axioms_rev_map, ind_rev_map);
             format!("App({}, {})", f, e)
         }
-        EXPR_AX => format!(
-            "Axiom({})",
-            (axioms_rev_map.get(&(term.left, term.right)).unwrap())
-        ),
-        EXPR_IND => format!("Ind({})", ind_rev_map.get(&term.left).unwrap()),
+        EXPR_AX => {
+            format!(
+                "Axiom({})",
+                (axioms_rev_map.get(&(term.ax, term.right)).unwrap())
+            )
+        }
+        EXPR_IND => format!("Ind({})", ind_rev_map.get(&term.ind).unwrap()),
         EXPR_IND_CTOR => format!(
             "IndCtor({}.{})",
-            ind_rev_map.get(&term.left).unwrap(),
-            term.right
+            ind_rev_map.get(&term.ind).unwrap(),
+            term.ind_ctor,
         ),
         EXPR_IND_REC => format!(
             "IndRec({}, {})",
-            ind_rev_map.get(&term.left).unwrap(),
-            term.right
+            ind_rev_map.get(&term.ind).unwrap(),
+            term.ind_ctor
         ),
         _ => unimplemented!(),
     }

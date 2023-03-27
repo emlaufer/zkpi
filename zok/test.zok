@@ -19,7 +19,8 @@ from "constants.zok" import EXPR_NULL, EXPR_VAR, EXPR_SORT, EXPR_APP, EXPR_LAM, 
 // TODO: can replace with lookup table? Maybe better
 def fast_lt(field lhs, field rhs) -> bool:
     // TODO: make sure this is sound
-    return field_to_u8(lhs) < field_to_u8(rhs)
+    field diff = (rhs + 128) - lhs
+    return field_to_u8(diff) > 128
 
 def fast_leq(field lhs, field rhs) -> bool:
     return fast_lt(lhs, rhs) || lhs == rhs
@@ -803,7 +804,6 @@ def check_get_arg(ExpRule node, ExpRule[PROOF_SIZE] proof, ExpTerm[NUM_TERMS] te
     fi
     return res
 
-// TODO: need to support rec on the result of Pi types...
 // No need to worry about Inductive global params because we are walking
 // backwards, not forwards...
 //
@@ -829,7 +829,6 @@ def check_apply_elim(ExpRule node, ExpRule[PROOF_SIZE] proof, ExpTerm[NUM_TERMS]
     field num_rec_args = node.extra2
     field rec = node.extra3
     field e_i = node.extra4
-    field num_applies = node.extra5
 
     // TODO: get and check e_i
     field node_f = input_term.left
@@ -843,33 +842,24 @@ def check_apply_elim(ExpRule node, ExpRule[PROOF_SIZE] proof, ExpTerm[NUM_TERMS]
     bool res = if num_nonrec_args == 0 && num_rec_args == 0 then\
         node.result_term_idx == e_i\
     else\
-        if num_applies == 0 && num_rec_args == 0 then\
-                parent0.rule == RULE_APPLY_ELIM\
-                && parent0.extra == num_nonrec_args - 1\
-                && parent0.extra2 == 0\
-                && parent0.extra5 == 0\
-                && result_term.kind == EXPR_APP\
-                && parent0.input_term_idx == node_f\
-                && parent0.result_term_idx == result_term.left\
-                && input_term.right == result_term.right\
+        if num_rec_args == 0 then\
+            parent0.rule == RULE_APPLY_ELIM\
+            && parent0.extra == num_nonrec_args - 1\
+            && parent0.extra2 == 0\
+            && result_term.kind == EXPR_APP\
+            && parent0.input_term_idx == node_f\
+            && parent0.result_term_idx == result_term.left\
+            && input_term.right == result_term.right\
         else\
-            if num_applies == 0 then\
-                parent0.rule == RULE_APPLY_ELIM\
-                && parent0.extra == num_nonrec_args\
-                && parent0.extra2 == num_rec_args - 1\
-                && result_term.kind == EXPR_APP\
-                && parent0.input_term_idx == node_f\
-                && parent0.result_term_idx == result_term.left\
-                && input_term.right == result_term.right\
-            else\
-                parent0.rule == RULE_APPLY_ELIM\
-                && parent0.extra == num_nonrec_args-1\
-                && parent0.extra2 == 0\
-                && result_term.kind == EXPR_APP\
-                && parent0.input_term_idx == node_f\
-                && parent0.result_term_idx == result_term.left\
-                && input_term.right == result_term.right\
-            fi\
+            parent0.rule == RULE_APPLY_ELIM\
+            && parent0.extra == num_nonrec_args\
+            && parent0.extra2 == num_rec_args - 1\
+            && result_term.kind == EXPR_APP\
+            && parent0.input_term_idx == node_f\
+            && parent0.result_term_idx == result_term.left\
+            && result_right.kind == EXPR_APP\
+            && result_right.left == rec\
+            && result_right.right == input_term.right\
         fi\
     fi
 
@@ -944,14 +934,12 @@ def check_ind_prefix(ExpRule node, ExpRule[PROOF_SIZE] proof, ExpTerm[NUM_TERMS]
 
     return res
 
-def check_type_ax(ExpRule node, ExpTerm[NUM_TERMS] terms, ExpLift[NUM_LIFTS] lifts, field[NUM_AXIOMS] axioms) -> bool:
+def check_type_ax(ExpRule node, ExpTerm[NUM_TERMS] terms, field[NUM_AXIOMS] axioms) -> bool:
     ExpTerm input_term = terms[node.input_term_idx]
-    ExpLift lift = lifts[node.lift_rule]
 
     field ax_term = axioms[input_term.ax]
     bool res = input_term.kind == EXPR_AX
-    res = res && ax_term == lift.input_term_idx
-    res = res && node.result_term_idx == lift.result_term_idx
+    res = res && ax_term == node.result_term_idx
     return res
 
 /// For now, we will just panic if verification fails.
@@ -1083,7 +1071,7 @@ def main(\
         type_ind_ok = type_ind_ok && if node.rule == RULE_TYPE_IND then check_type_ind(node, proof, lifts, terms, inductives) else true fi
         type_ind_ctor_ok = type_ind_ctor_ok && if node.rule == RULE_TYPE_IND_CTOR then check_type_ind_ctor(node, proof, lifts, terms, inductives, rules, alpha, beta, rule_hashes) else true fi
         type_ind_rec_ok = type_ind_rec_ok && if node.rule == RULE_TYPE_IND_REC then check_type_ind_rec(node, proof, lifts, terms, inductives) else true fi
-        type_ax_ok = type_ax_ok && if node.rule == RULE_TYPE_AX then check_type_ax(node, terms, lifts, axioms) else true fi
+        type_ax_ok = type_ax_ok && if node.rule == RULE_TYPE_AX then check_type_ax(node, terms, axioms) else true fi
 
         proof_irrel_ok = proof_irrel_ok && if node.rule == RULE_PROOF_IRREL then check_proof_irrel(node, proof, terms) else true fi
         proof_irrel_ok = proof_irrel_ok && if node.rule == RULE_PROOF_IRREL_SUB1 then check_proof_irrel_sub1(node, proof, terms) else true fi

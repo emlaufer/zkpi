@@ -305,10 +305,7 @@ args = parser.parse_args()
 username = args.user
 
 machines = hosts_from_file(args.hosts)
-to_run = benchmarks_from_file(args.benchmarks)
 print(f"{len(machines)} machines")
-
-tasks = len(to_run)
 
 results = queue.LifoQueue()
 benchmarks = []

@@ -16,7 +16,7 @@ n=$1
 cores=$2
 ty=$3
 
-IMAGE='with-kill'
+IMAGE='zkpi-oneshots7'
 
 function usage {
   echo "Usage: $0 N_VMS CORES" >&2
@@ -44,7 +44,7 @@ gcloud beta compute instances create $=names \
     --project soe-collaborative-proof \
     --image-project soe-collaborative-proof \
     --image $IMAGE \
-    --machine-type=$ty-$((2 * $cores))
+    --machine-type=$ty-$cores
 for name in $=names
 do
   echo $name >> $VM_FILE
@@ -52,24 +52,5 @@ done
 
 echo letting them start up
 sleep 60
-
-for name in $=names
-do
-  pubip=$(gcloud compute instances describe $name --format='get(networkInterfaces[0].accessConfigs[0].natIP)'\
-      --zone us-central1-a \
-      --project soe-collaborative-proof)
-  privip=$(gcloud compute instances describe $name --format='get(networkInterfaces[0].networkIP)'\
-      --zone us-central1-a \
-      --project soe-collaborative-proof)
-  echo $pubip $privip >> $HOSTS_FILE
-  #ssh-keyscan $ip >> ~/.ssh/known_hosts
-  ssh-keygen -R $pubip
-  ssh -o "StrictHostKeyChecking accept-new" $pubip 'sudo ./hyperthreading.sh -d'
-done
-
-# gcloud beta compute instances delete $name \
-#     --zone us-central1-a \
-#     --project soe-collaborative-proof
-
 
 trap - INT TERM EXIT

@@ -1,0 +1,14 @@
+name,r1cs_size,compile_time,gen_time,precompute_time,prove_time,verify_time,returncode
+monad.sequence\'._sunfold,-1,-1,-1,-1,-1,-1,200
+list.mmap\'._main,-1,-1,-1,-1,-1,-1,200
+list.mmap\'._main.equations._eqn_1,-1,-1,-1,-1,-1,-1,200
+strict_weak_order.not_lt_of_equiv\',218235,51324,86344,0,17943,17943,0
+_private.3275814439.name.components\'.equations._eqn_1,-1,-1,-1,-1,-1,-1,200
+_private.3275814439.name.components\',-1,-1,-1,-1,-1,-1,200
+_private.3275814439.name.components\'._main.equations._eqn_1,-1,-1,-1,-1,-1,-1,200
+_private.3275814439.name.components\'.equations._eqn_3,-1,-1,-1,-1,-1,-1,200
+array.read\',-1,-1,-1,-1,-1,-1,-1000
+nat.shiftl\'._main,-1,-1,-1,-1,-1,-1,-1000
+buffer.write\'._main.equations._eqn_1,-1,-1,-1,-1,-1,-1,-1000
+buffer.read\'.equations._eqn_1,-1,-1,-1,-1,-1,-1,-1000
+nat.shiftl\'._main.equations._eqn_2,-1,-1,-1,-1,-1,-1,-1000

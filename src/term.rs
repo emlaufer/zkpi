@@ -214,19 +214,19 @@ impl Theorem {
         //println!("statement: {:?}\n :: {:?}", self.val, self.ty);
         let mut eval = Evaluator::new(&self.axioms, self.inductives.clone());
         println!("simplifying...");
-        //let test_val = {
-        //    let test = eval
-        //        .eval(self.val.clone())
-        //        .map_err(|e| format!("Simplify val err: {}", e))?;
-        //    garbage_collect();
-        //    let mut cache = Some(HConMap::default());
-        //    println!(
-        //        "simplified from size {} to size {}",
-        //        self.val.size(&mut cache),
-        //        test.size(&mut cache)
-        //    );
-        //    test
-        //};
+        let test_val = {
+            let test = eval
+                .eval(self.val.clone())
+                .map_err(|e| format!("Simplify val err: {}", e))?;
+            garbage_collect();
+            let mut cache = Some(HConMap::default());
+            println!(
+                "simplified from size {} to size {}",
+                self.val.size(&mut cache),
+                test.size(&mut cache)
+            );
+            test
+        };
 
         //OK: WHAT I WILL DO:
         //    - output mapping between terms and the expr number to find bad expr number
@@ -235,15 +235,16 @@ impl Theorem {
         //println!("typing term {}...", test_val);
         println!("gc...");
         //garbage_collect();
-        println!("typing term {}...", self.val);
-        println!("expect type {}...", self.ty);
-        let computed_ty = eval
-            .ty(self.val.clone())
-            .map_err(|e| format!("Typing error: {}", e))?;
-        println!("simplify type...");
         let simplified_ty = eval
             .eval(self.ty.clone())
             .map_err(|e| format!("Simplify Type error: {}", e))?;
+        println!("typing term {}...", test_val);
+        println!("expect type {}...", simplified_ty);
+        let computed_ty = eval
+            .ty(test_val.clone())
+            .map_err(|e| format!("Typing error: {}", e))?;
+        println!("simplify type...");
+        println!("expect type {}...", simplified_ty);
         println!("def eq...");
         if !eval.def_equals(computed_ty.clone(), simplified_ty.clone()) {
             Err(format!(
@@ -393,7 +394,7 @@ impl Inductive {
 
         for param in rule_params {
             match &*param.top_level_func() {
-                TermData::Axiom(name) if name == &self.name => {
+                TermData::Ind(name) if name == &self.name => {
                     break;
                 }
                 _ => res += 1,
@@ -663,13 +664,17 @@ impl Inductive {
 
         if !self.non_dependent {
             // construct the recursive param
+            println!("HI");
             let mut ind_app_list = vec![ind(self.name.clone())];
             let global_bindings = (0..self.global_params().len())
                 .map(|i| bound(self.global_params().len() - 1 - i + res_pi_list.len()));
+            println!("HI2");
             ind_app_list.extend(global_bindings);
+            println!("self.index params: {:?}", self.index_params());
             let index_bindings =
-                (0..self.index_params().len()).map(|i| bound(self.global_params().len() - 1 - i));
+                (0..self.index_params().len()).map(|i| bound(self.index_params().len() - 1 - i));
             ind_app_list.extend(index_bindings);
+            println!("HI3");
             let ind = app_list(&ind_app_list);
             res_pi_list.push(ind);
         }
@@ -1778,17 +1783,18 @@ impl Evaluator {
                         //    e_ty, domain_value
                         //);
                         //println!("pprod: {:?}", self.inductives.get("pprod.{1,2}"));
-                        println!(
-                            "Context: {:?}\nTerm: {:?}\nFunc Type: {:?}\nArg Type: {:?}, e_ty_value: {:?}\n",
-                            context, term, f_ty, e_ty, e_ty_value
-                        );
+                        //println!(
+                        //    "Context: {:?}\nTerm: {:?}\nFunc Type: {:?}\nArg Type: {:?}, e_ty_value: {:?}\n",
+                        //    context, term, f_ty, e_ty, e_ty_value
+                        //);
                         ////println!("domain: {:?}", domain);
                         ////println!(
                         ////    "acc.{{1}}.rec.{{1}}: {:?}",
                         ////    self.axioms.get("acc.{1}.rec.{1}")
                         ////);
-                        //println!("term: {}", term);
-                        //println!("e: {}", e);
+                        println!("term: {}", term);
+                        println!("f_ty: {}", f_ty);
+                        println!("e: {}", e);
                         //println!("domain: {}", domain_value);
                         return Err(format!(
                             "Type mismatch: got {}, expected: {}",
@@ -1889,7 +1895,6 @@ impl Evaluator {
     }
 
     pub fn def_equals_with_context(&mut self, a: Term, b: Term, context: &mut Context) -> bool {
-        //println!("trace def eq: {}\n==AND==\n{}", a, b);
         //println!("context def 1!: {:?}", context);
         // fast case
         if a == b {

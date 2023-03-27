@@ -1,8 +1,10 @@
 #![feature(mixed_integer_ops)]
 #![feature(let_chains)]
 #![recursion_limit = "100000000000"]
+#![allow(warnings)]
 
 use rlimit::{setrlimit, Resource, INFINITY};
+use std::cmp::max;
 use std::collections::{BTreeMap, HashMap};
 use std::env;
 use std::fs::File;
@@ -118,14 +120,16 @@ fn main() -> io::Result<()> {
                 &mut term_cache,
             )
             .unwrap();
-        //println!(
-        //    "proving theorem {}... (estimated size {})",
-        //    definition_name,
-        //    exported.size(&mut size_cache)
-        //);
-
         match options.command {
-            Command::Prove => exported.prove().unwrap(),
+            Command::Prove => {
+                println!(
+                    "proving theorem {}... (estimated size {})",
+                    definition_name,
+                    exported.size(&mut size_cache)
+                );
+                exported.prove().unwrap();
+            }
+
             Command::Sim => {
                 zk::Exporter::simulate(exported.clone()).unwrap();
                 println!("Success!");
@@ -137,16 +141,16 @@ fn main() -> io::Result<()> {
                 let zk_in = zk::Exporter::export(exported.clone()).unwrap();
                 println!(
                     "{},{},{},{},{},{},{},{},{},{}",
-                    zk_in.rules.len(),
-                    zk_in.terms.len(),
-                    zk_in.contexts.nodes.len(),
-                    zk_in.lifts.len(),
-                    zk_in.inductives.len(),
-                    zk_in.public_terms.len(),
-                    zk_in.ind_rules.nodes.len(),
-                    zk_in.ind_nnrs.nodes.len(),
-                    zk_in.ind_nrs.nodes.len(),
-                    std::cmp::max(zk_in.axioms.len(), 1),
+                    max(zk_in.rules.len(), 1),
+                    max(zk_in.terms.len(), 1),
+                    max(zk_in.contexts.nodes.len(), 1),
+                    max(zk_in.lifts.len(), 1),
+                    max(zk_in.inductives.len(), 1),
+                    max(zk_in.public_terms.len(), 1),
+                    max(zk_in.ind_rules.nodes.len(), 1),
+                    max(zk_in.ind_nnrs.nodes.len(), 1),
+                    max(zk_in.ind_nrs.nodes.len(), 1),
+                    max(zk_in.axioms.len(), 1),
                 );
             }
             Command::List => {
