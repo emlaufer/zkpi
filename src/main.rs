@@ -135,7 +135,7 @@ fn main() -> io::Result<()> {
                 println!("Success!");
             }
             Command::Export => {
-                println!("{}", zk::Exporter::export_string(exported.clone()).unwrap());
+                println!("{}", zk::Exporter::export(exported.clone()).unwrap().serialize());
             }
             Command::Count => {
                 let zk_in = zk::Exporter::export(exported.clone()).unwrap();

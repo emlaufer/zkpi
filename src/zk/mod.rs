@@ -1816,7 +1816,7 @@ impl ZkInput {
         return result.to_string();
     }
 
-    fn serialize(&self) -> String {
+    pub fn serialize(&self) -> String {
         self.serialize_sized(
             max(self.rules.len(), 1),
             max(self.terms.len(), 1),
@@ -2064,68 +2064,6 @@ impl Exporter {
         Ok(())
     }
 
-    pub fn export_string(theorem: Theorem) -> Result<String, String> {
-        let mut context = Context::new();
-        let mut eval = Evaluator::new(&theorem.axioms, theorem.inductives.clone());
-        let mut axioms = theorem.axioms;
-
-        // TODO: fix
-        //for (name, inductive) in theorem.inductives {
-        //    //println!("inserting inductive: {}", name);
-        //    axioms.insert(name, inductive.ty);
-        //    for rule in inductive.rules {
-        //        axioms.insert(rule.name, rule.ty);
-        //    }
-        //}
-
-        //let mut exporter = Exporter::new_with_eval(eval);
-        //println!("axioms: {:?}", axioms);
-        let simplified_ty = eval.eval(theorem.ty.clone()).unwrap();
-        let mut exporter = Exporter::with_axioms(simplified_ty, axioms, theorem.inductives);
-
-        //println!("exp_axioms: {:?}", exporter.axiom_mapping);
-        let simplified_val = eval.eval(theorem.val.clone()).unwrap();
-        //println!("proving: {:?} :: {:?}", simplified_val, simplified_ty);
-        let rule = exporter.export_ty_term(simplified_val)?;
-        let result_type = exporter.get_zk_rule(rule).result_term_idx;
-
-        if result_type != exporter.zk_input.expected_type {
-            //println!(
-            //    "attempting to unify final types {} and {}",
-            //    term_to_string(
-            //        result_type,
-            //        &exporter.zk_input.terms,
-            //        &exporter.axiom_rev_mapping,
-            //        &exporter.ind_rev_map
-            //    ),
-            //    term_to_string(
-            //        exporter.zk_input.expected_type,
-            //        &exporter.zk_input.terms,
-            //        &exporter.axiom_rev_mapping,
-            //        &exporter.ind_rev_map
-            //    )
-            //);
-
-            let rule = exporter.export_unify(rule, exporter.zk_input.expected_type)?;
-            exporter.zk_input.proving_rule = rule;
-        } else {
-            exporter.zk_input.proving_rule = rule;
-        }
-
-        //println!(
-        //    "Sizes!: PROOF_SIZE: {}, NUM_TERMS: {}, CONTEXT_SIZE: {}, NUM_LIFTS {}, NUM_INDS {}, PUB_TERMS {}",
-        //    exporter.zk_input.rules.len(),
-        //    exporter.zk_input.terms.len(),
-        //    exporter.zk_input.contexts.len(),
-        //    exporter.zk_input.lifts.len(),
-        //    exporter.zk_input.inductives.len(),
-        //    exporter.zk_input.public_terms.len(),
-        //);
-        exporter.zk_input.compress();
-
-        Ok(exporter.zk_input.serialize())
-    }
-
     pub fn export(theorem: Theorem) -> Result<ZkInput, String> {
         let mut context = Context::new();
         let mut eval = Evaluator::new(&theorem.axioms, theorem.inductives.clone());
@@ -2166,68 +2104,6 @@ impl Exporter {
 
         Ok(exporter.zk_input)
     }
-
-    /*pub fn export_string_presize(theorem: Theorem) -> Result<String, String> {
-        let mut context = Context::new();
-        let mut eval = Evaluator::new(&theorem.axioms, theorem.inductives.clone());
-        let mut axioms = theorem.axioms;
-
-        // TODO: fix
-        //for (name, inductive) in theorem.inductives {
-        //    //println!("inserting inductive: {}", name);
-        //    axioms.insert(name, inductive.ty);
-        //    for rule in inductive.rules {
-        //        axioms.insert(rule.name, rule.ty);
-        //    }
-        //}
-
-        //let mut exporter = Exporter::new_with_eval(eval);
-        //println!("axioms: {:?}", axioms);
-        let simplified_ty = eval.eval(theorem.ty.clone()).unwrap();
-        let mut exporter = Exporter::with_axioms(simplified_ty, axioms, theorem.inductives);
-
-        //println!("exp_axioms: {:?}", exporter.axiom_mapping);
-        let simplified_val = eval.eval(theorem.val.clone()).unwrap();
-        let simplified_ty = eval.eval(theorem.ty.clone()).unwrap();
-        //println!("proving: {:?} :: {:?}", simplified_val, simplified_ty);
-        let rule = exporter.export_ty_term(simplified_val)?;
-        let result_type = exporter.get_zk_rule(rule).result_term_idx;
-
-        if result_type != exporter.zk_input.expected_type {
-            println!(
-                "attempting to unify final types {} and {}",
-                term_to_string(
-                    result_type,
-                    &exporter.zk_input.terms,
-                    &exporter.axiom_rev_mapping,
-                    &exporter.ind_rev_map
-                ),
-                term_to_string(
-                    exporter.zk_input.expected_type,
-                    &exporter.zk_input.terms,
-                    &exporter.axiom_rev_mapping,
-                    &exporter.ind_rev_map
-                )
-            );
-
-            let rule = exporter.export_unify(rule, exporter.zk_input.expected_type)?;
-            exporter.zk_input.proving_rule = rule;
-        } else {
-            exporter.zk_input.proving_rule = rule;
-        }
-
-        println!(
-            "Sizes!: PROOF_SIZE: {}, NUM_TERMS: {}, CONTEXT_SIZE: {}, NUM_LIFTS {}, NUM_INDS {}, PUB_TERMS {}",
-            exporter.zk_input.rules.len(),
-            exporter.zk_input.terms.len(),
-            exporter.zk_input.contexts.len(),
-            exporter.zk_input.lifts.len(),
-            exporter.zk_input.inductives.len(),
-            exporter.zk_input.public_terms.len(),
-        );
-
-        Ok(exporter.zk_input.serialize())
-    }*/
 
     fn export_ind_pref(
         &mut self,
