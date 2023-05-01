@@ -1802,7 +1802,7 @@ impl ZkInput {
             result += &serialize_field("inductives", Some(i), Some("elim_argc"), ind.elim_argc);
         }
 
-        for i in 0..num_inds {
+        for i in 0..num_axs {
             let ax = self.axioms.get(i).unwrap_or(&0);
             result += &serialize_field("axioms", Some(i), None, *ax);
         }
@@ -2069,12 +2069,12 @@ impl Exporter {
         let mut eval = Evaluator::new(&theorem.axioms, theorem.inductives.clone());
         let mut axioms = theorem.axioms;
 
-        //let simplified_ty = eval.eval(theorem.ty.clone()).unwrap();
-        let mut exporter = Exporter::with_axioms(theorem.ty.clone(), axioms, theorem.inductives);
+        let simplified_ty = eval.eval(theorem.ty.clone()).unwrap();
+        let mut exporter = Exporter::with_axioms(simplified_ty, axioms, theorem.inductives);
 
-        //let simplified_val = eval.eval(theorem.val.clone()).unwrap();
+        let simplified_val = eval.eval(theorem.val.clone()).unwrap();
         //let simplified_ty = eval.eval(theorem.ty.clone()).unwrap();
-        let rule = exporter.export_ty_term(theorem.val.clone())?;
+        let rule = exporter.export_ty_term(simplified_val)?;
         let result_type = exporter.get_zk_rule(rule).result_term_idx;
 
         if result_type != exporter.zk_input.expected_type {
@@ -2980,6 +2980,14 @@ impl Exporter {
                     //        &self.ind_rev_map
                     //    ),
                     //);
+                    //ExpRule::proof_irrel(
+                    //    result_type,
+                    //    expected_type,
+                    //    zk_context,
+                    //    max_binding,
+                    //    res_ty_rule,
+                    //    0,
+                    //)
                     return Err("oof".to_string());
                 }
             }
@@ -3947,27 +3955,30 @@ impl Exporter {
                                         break;
                                     }
                                 } else {
-                                    //println!(
-                                    //    "Expected: {}\n\nGot: {}\n\nE: {}",
-                                    //    term_to_string(
-                                    //        domain_ty,
-                                    //        &self.zk_input.terms,
-                                    //        &self.axiom_rev_mapping,
-                                    //        &self.ind_rev_map
-                                    //    ),
-                                    //    term_to_string(
-                                    //        e_result,
-                                    //        &self.zk_input.terms,
-                                    //        &self.axiom_rev_mapping,
-                                    //        &self.ind_rev_map
-                                    //    ),
-                                    //    term_to_string(
-                                    //        e,
-                                    //        &self.zk_input.terms,
-                                    //        &self.axiom_rev_mapping,
-                                    //        &self.ind_rev_map
-                                    //    ),
-                                    //);
+                                    if domain_ty == e_result {
+                                        break;
+                                    }
+                                    println!(
+                                        "Expected: {}\n\nGot: {}\n\nE: {}",
+                                        term_to_string(
+                                            domain_ty,
+                                            &self.zk_input.terms,
+                                            &self.axiom_rev_mapping,
+                                            &self.ind_rev_map
+                                        ),
+                                        term_to_string(
+                                            e_result,
+                                            &self.zk_input.terms,
+                                            &self.axiom_rev_mapping,
+                                            &self.ind_rev_map
+                                        ),
+                                        term_to_string(
+                                            e,
+                                            &self.zk_input.terms,
+                                            &self.axiom_rev_mapping,
+                                            &self.ind_rev_map
+                                        ),
+                                    );
                                     return Err(format!("Typing error:"));
                                 }
                             }
