@@ -808,7 +808,8 @@ impl LeanEncoding {
         }
 
         if name_string.starts_with("quot") && name_string != "quot.sound" {
-            return Err(format!("We don't support quot: {}", name_string));
+            return Ok(term::axiom(name_string));
+            //return Err(format!("We don't support quot: {}", name_string));
         }
 
         // if const is an induction eliminator...
@@ -988,6 +989,16 @@ impl LeanEncoding {
                 //self.export_expr(*val, axioms, inductives, &universes, let_bindings, cache);
 
                 let name_string = self.resolve_name(*name);
+                if name_string == "is_eq"
+                    || name_string == "mem"
+                    || name_string == "nodup_list_cons"
+                    || name_string == "decidable_bool_eq"
+                {
+                    let ty_term =
+                        self.export_expr(*ty, axioms, inductives, &universes, let_bindings, cache)?;
+                    axioms.insert(name_string.clone(), ty_term);
+                    return Ok(term::axiom(name_string));
+                }
                 //if name_string == "LoVe.state"
                 //    || name_string == "decidable_eq"
                 //    || name_string.contains("decidable_eq")
@@ -1034,7 +1045,10 @@ impl LeanEncoding {
                 //////|| name_string.contains("cases_on")
                 //////|| name_string.contains("add_monoid")
                 //{
-                return self.export_expr(*val, axioms, inductives, &universes, let_bindings, cache);
+                let term =
+                    self.export_expr(*val, axioms, inductives, &universes, let_bindings, cache);
+                println!("Exporting def: {:?} as {:?}\n", name_string, term);
+                term
                 //}
                 //let ty_term =
                 //    self.export_expr(*ty, axioms, inductives, &universes, let_bindings, cache)?;

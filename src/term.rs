@@ -213,6 +213,7 @@ impl Theorem {
         //let inds: Vec<Inductive> = self.inductives.values().cloned().collect();
         //println!("statement: {:?}\n :: {:?}", self.val, self.ty);
         let mut eval = Evaluator::new(&self.axioms, self.inductives.clone());
+        //println!("original term: {:?}", self.val);
         println!("simplifying...");
         let test_val = {
             let test = eval
@@ -238,14 +239,22 @@ impl Theorem {
         let simplified_ty = eval
             .eval(self.ty.clone())
             .map_err(|e| format!("Simplify Type error: {}", e))?;
-        println!("typing term {}...", test_val);
-        println!("expect type {}...", simplified_ty);
+        {
+            let mut cache = Some(HConMap::default());
+            println!(
+                "simplified type from size {} to size {}",
+                self.ty.size(&mut cache),
+                simplified_ty.size(&mut cache)
+            );
+        }
+        //println!("typing term {}...", test_val);
+        //println!("expect type {}...", simplified_ty);
         let computed_ty = eval
             .ty(test_val.clone())
             .map_err(|e| format!("Typing error: {}", e))?;
-        println!("simplify type...");
-        println!("expect type {}...", simplified_ty);
-        println!("def eq...");
+        //println!("simplify type...");
+        //println!("expect type {}...", simplified_ty);
+        //println!("def eq...");
         if !eval.def_equals(computed_ty.clone(), simplified_ty.clone()) {
             Err(format!(
                 "Theorem prove fail: Expected type: {:?} (simplified to {:?}) , Got type: {:?}",
@@ -664,17 +673,13 @@ impl Inductive {
 
         if !self.non_dependent {
             // construct the recursive param
-            println!("HI");
             let mut ind_app_list = vec![ind(self.name.clone())];
             let global_bindings = (0..self.global_params().len())
                 .map(|i| bound(self.global_params().len() - 1 - i + res_pi_list.len()));
-            println!("HI2");
             ind_app_list.extend(global_bindings);
-            println!("self.index params: {:?}", self.index_params());
             let index_bindings =
                 (0..self.index_params().len()).map(|i| bound(self.index_params().len() - 1 - i));
             ind_app_list.extend(index_bindings);
-            println!("HI3");
             let ind = app_list(&ind_app_list);
             res_pi_list.push(ind);
         }
