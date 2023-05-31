@@ -1,11 +1,50 @@
 
-const field PROOF_SIZE = 100
-const field NUM_TERMS = 1
-const u32 CONTEXT_SIZE = 1
-const field NUM_LIFTS = 1
-const field NUM_INDS = 1
-const field NUM_PUB_TERMS = 1
-const field NUM_RULES = 1
-const field NUM_NNRS = 1
-const field NUM_NRS = 1
+//228,205,14,144,2,41,5,4,3,1
+// 1913,1923,346,3881,6,298,12,8,5,2
+// 116,106,9,85,1,25,4,3,3,1
+//const field PROOF_SIZE = 228
+//const field NUM_TERMS = 205
+//const u32 CONTEXT_SIZE = 14
+//const field NUM_LIFTS = 144
+//const field NUM_INDS = 2
+//const field NUM_PUB_TERMS = 41
+//const field NUM_RULES = 5
+//const field NUM_NNRS = 4
+//const field NUM_NRS = 3
+//const field NUM_AXIOMS = 1
+
+//const field PROOF_SIZE = 116
+//const field NUM_TERMS = 106
+//const field CONTEXT_SIZE = 9
+//const field NUM_LIFTS = 85
+//const field NUM_INDS = 1
+//const field NUM_PUB_TERMS = 25
+//const field NUM_RULES = 4
+//const field NUM_NNRS = 3
+//const field NUM_NRS = 3
+//const field NUM_AXIOMS = 1
+
+//const field PROOF_SIZE = 1913
+//const field NUM_TERMS = 1923
+//const u32 CONTEXT_SIZE = 346
+//const field NUM_LIFTS = 3881
+//const field NUM_INDS = 6
+//const field NUM_PUB_TERMS = 298
+//const field NUM_RULES = 12
+//const field NUM_NNRS = 8
+//const field NUM_NRS = 5
+//const field NUM_AXIOMS = 2
+
+//555,510,179,658,6,157,9,5,4,1
+const field PROOF_SIZE = 555
+const field NUM_TERMS = 510
+const u32 CONTEXT_SIZE = 179
+const field NUM_LIFTS = 658
+const field NUM_INDS = 6
+const field NUM_PUB_TERMS = 157
+const field NUM_RULES = 9
+const field NUM_NNRS = 5
+const field NUM_NRS = 4
 const field NUM_AXIOMS = 1
+
+// 1913,1923,346,3881,6,298,12,8,5,2

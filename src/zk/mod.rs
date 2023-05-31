@@ -249,6 +249,7 @@ pub struct ExpRule {
     extra3: usize,
     extra4: usize,
     extra5: usize,
+    extra6: usize,
     inductive: usize,
     ind_rule: usize,
     ind_ctor_quot: usize,
@@ -274,6 +275,7 @@ impl ExpRule {
             extra3: 0,
             extra4: 0,
             extra5: 0,
+            extra6: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -299,6 +301,7 @@ impl ExpRule {
             extra3: 0,
             extra4: 0,
             extra5: 0,
+            extra6: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -330,6 +333,7 @@ impl ExpRule {
             extra3: 0,
             extra4: 0,
             extra5: 0,
+            extra6: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -364,6 +368,7 @@ impl ExpRule {
             extra3: 0,
             extra4: 0,
             extra5: 0,
+            extra6: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -400,6 +405,7 @@ impl ExpRule {
             extra3: 0,
             extra4: 0,
             extra5: 0,
+            extra6: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -434,6 +440,7 @@ impl ExpRule {
             extra3: 0,
             extra4: 0,
             extra5: 0,
+            extra6: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -489,6 +496,7 @@ impl ExpRule {
             extra3: 0,
             extra4: 0,
             extra5: 0,
+            extra6: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -520,6 +528,7 @@ impl ExpRule {
             extra3: 0,
             extra4: 0,
             extra5: 0,
+            extra6: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -546,6 +555,7 @@ impl ExpRule {
             extra3: 0,
             extra4: 0,
             extra5: 0,
+            extra6: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -578,6 +588,7 @@ impl ExpRule {
             extra3: 0,
             extra4: 0,
             extra5: 0,
+            extra6: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -612,6 +623,7 @@ impl ExpRule {
             extra3: 0,
             extra4: 0,
             extra5: 0,
+            extra6: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -647,6 +659,7 @@ impl ExpRule {
             extra3: 0,
             extra4: 0,
             extra5: 0,
+            extra6: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -682,6 +695,7 @@ impl ExpRule {
             extra3: 0,
             extra4: 0,
             extra5: 0,
+            extra6: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -717,6 +731,7 @@ impl ExpRule {
             extra3: 0,
             extra4: 0,
             extra5: 0,
+            extra6: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -742,6 +757,7 @@ impl ExpRule {
             extra3: 0,
             extra4: 0,
             extra5: 0,
+            extra6: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -774,6 +790,7 @@ impl ExpRule {
             extra3: 0,
             extra4: 0,
             extra5: 0,
+            extra6: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -806,6 +823,7 @@ impl ExpRule {
             extra3: 0,
             extra4: 0,
             extra5: 0,
+            extra6: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -838,6 +856,7 @@ impl ExpRule {
             extra3: 0,
             extra4: 0,
             extra5: 0,
+            extra6: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -849,7 +868,7 @@ impl ExpRule {
     pub fn get_arg(input: usize, result: usize, count: usize, parent0: usize) -> ExpRule {
         ExpRule {
             rule: RULE_GET_ARG,
-            ctx_idx: count,
+            ctx_idx: 0,
             max_binding: 0,
             parent0,
             parent1: 0,
@@ -858,11 +877,12 @@ impl ExpRule {
             lift_rule: 0,
             input_term_idx: input,
             result_term_idx: result,
-            extra: 0,
+            extra: count,
             extra2: 0,
             extra3: 0,
             extra4: 0,
             extra5: 0,
+            extra6: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -881,6 +901,7 @@ impl ExpRule {
         num_recs: usize,
         apply_recs: usize,
         parent0: usize,
+        orig_idx: usize,
     ) -> ExpRule {
         ExpRule {
             rule: RULE_APPLY_ELIM,
@@ -898,6 +919,7 @@ impl ExpRule {
             extra3: rec,
             extra4: e_i,
             extra5: apply_recs,
+            extra6: orig_idx,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -934,6 +956,7 @@ impl ExpRule {
             extra3: rec,
             extra4: e_i,
             extra5: 0,
+            extra6: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -959,6 +982,7 @@ impl ExpRule {
             extra3: 0,
             extra4: 0,
             extra5: 0,
+            extra6: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -990,6 +1014,7 @@ impl ExpRule {
             extra3: 0,
             extra4: 0,
             extra5: 0,
+            extra6: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot,
@@ -1021,6 +1046,7 @@ impl ExpRule {
             extra3: 0,
             extra4: 0,
             extra5: 0,
+            extra6: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -1046,6 +1072,7 @@ impl ExpRule {
             extra3: 0,
             extra4: 0,
             extra5: 0,
+            extra6: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -1079,6 +1106,7 @@ impl ExpRule {
             extra3: 0,
             extra4: 0,
             extra5: 0,
+            extra6: 0,
             inductive,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -1113,6 +1141,7 @@ impl ExpRule {
             extra3: 0,
             extra4: 0,
             extra5: 0,
+            extra6: 0,
             inductive,
             ind_rule: ind_rule_idx,
             ind_ctor_quot: 0,
@@ -1146,13 +1175,14 @@ impl ExpRule {
             lift_rule: 0,
             input_term_idx: input,
             result_term_idx: result,
-            extra: ind_rule_idx,
+            extra: 0,
             extra2: ind_elim,
             extra3: rec,
             extra4: 0,
             extra5: 0,
+            extra6: 0,
             inductive,
-            ind_rule: 0,
+            ind_rule: ind_rule_idx,
             ind_ctor_quot: 0,
             ind_nnr_quot: nnr_quot,
             ind_nr_quot: nr_quot,
@@ -1183,6 +1213,7 @@ impl ExpRule {
             extra3: 0,
             extra4: 0,
             extra5: 0,
+            extra6: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -1215,6 +1246,7 @@ impl ExpRule {
             extra3: 0,
             extra4: 0,
             extra5: 0,
+            extra6: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -1247,6 +1279,7 @@ impl ExpRule {
             extra3: 0,
             extra4: 0,
             extra5: 0,
+            extra6: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -1272,6 +1305,7 @@ impl ExpRule {
             extra3: 0,
             extra4: 0,
             extra5: 0,
+            extra6: 0,
             inductive: 0,
             ind_rule: 0,
             ind_ctor_quot: 0,
@@ -1300,12 +1334,16 @@ impl HashList {
     const EMPTY: usize = 0;
 
     fn new() -> HashList {
+        let mut rng = rand::thread_rng();
+
+        let alpha = rng.gen();
+        let beta = rng.gen();
         //println!("empty is: {}", Self::EMPTY);
         let mut max_names = HashMap::new();
         max_names.insert(HashList::EMPTY, 0);
         HashList {
-            alpha: 2000,
-            beta: 23435,
+            alpha,
+            beta,
             nodes: vec![HashNode::empty()],
             node_mapping: HashMap::new(),
             max_names,
@@ -1682,6 +1720,7 @@ impl ZkInput {
             result += &serialize_field("proof", Some(i), Some("extra3"), rule.extra3);
             result += &serialize_field("proof", Some(i), Some("extra4"), rule.extra4);
             result += &serialize_field("proof", Some(i), Some("extra5"), rule.extra5);
+            result += &serialize_field("proof", Some(i), Some("extra6"), rule.extra6);
             result += &serialize_field("proof", Some(i), Some("inductive"), rule.inductive);
             result += &serialize_field("proof", Some(i), Some("ind_rule"), rule.ind_rule);
             result += &serialize_field("proof", Some(i), Some("ind_ctor_quot"), rule.ind_ctor_quot);
@@ -2185,12 +2224,6 @@ impl Exporter {
             if !(ind_ctor.kind == EXPR_IND_CTOR && ind_ctor.ind == input_tlf.ind) {
                 return Err("Not a ctor!".to_string());
             }
-            //println!(
-            //    "inductive.num_params: {}, {}, {} ",
-            //    inductive.num_params,
-            //    ind_ctor.ind_ctor,
-            //    num_args - (inductive.num_params + 2 + ind_ctor.ind_ctor)
-            //);
             let get_elim_rule_idx = self
                 .export_get_arg(
                     input_idx,
@@ -2243,7 +2276,7 @@ impl Exporter {
                 zk_context,
                 max_binding,
                 input_tlf.ind,
-                num_args - (inductive.num_params + 2 + ind_ctor.ind_ctor),
+                ind_ctor.ind_ctor,
                 0,
                 get_elim_rule_idx,
             );
@@ -2403,6 +2436,7 @@ impl Exporter {
                 0,
                 0,
                 0,
+                0,
             );
             Ok(self.add_zk_rule(rule))
         //  elim_apply (nnr-1) 0 e_i rec f => f'
@@ -2441,6 +2475,7 @@ impl Exporter {
                 rec_params,
                 0,
                 parent0_idx,
+                orig_idx,
             );
             Ok(self.add_zk_rule(rule))
 
@@ -2482,6 +2517,7 @@ impl Exporter {
                 rec_params,
                 0,
                 parent0_idx,
+                orig_idx,
             );
             Ok(self.add_zk_rule(rule))
 
@@ -2521,7 +2557,6 @@ impl Exporter {
             let fp = self.get_zk_rule(parent0_idx).result_term_idx;
             let fp_tlf = self.get_zk_term(fp).top_level_func;
 
-            // TODO: this is probably wrong
             let app_rec_e = ExpTerm::app(rec_idx, e, rec_idx);
             let app_rec_e_idx = self.add_zk_term(app_rec_e);
 
@@ -2539,6 +2574,7 @@ impl Exporter {
                 rec_params,
                 rec_applies,
                 parent0_idx,
+                orig_idx,
             );
             Ok(self.add_zk_rule(rule))
         }
@@ -5149,7 +5185,6 @@ pub fn to_term(
 //    //    let mut exp = Exporter::new();
 //    //    let s0 = exp.export_term(sort(0), &mut Vec::new());
 //    //    let zk_context = exp.contexts.add(HashList::EMPTY, 0, s0);
-//    //    let mut context = Context::new();
 //    //    context.push(sort(1));
 //    //    let (rule, res) = exp.export_eval(bound(0), zk_context, &mut context, &mut vec![0]);
 //    //    println!("rule: {:?} {:?}", exp.rules[rule], res);

@@ -38,6 +38,7 @@ struct ExpRule {
     field extra3
     field extra4
     field extra5
+    field extra6
     field ind_rule
     field ind_ctor_quot
     field ind_nnr_quot

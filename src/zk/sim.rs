@@ -454,19 +454,13 @@ fn check_eval_var(
     //    lift_node.input_term_idx
     //);
     //println!("zk_context: {:?}", contexts.to_string(node.ctx_idx));
-    assert!(
-        hash_list_contains(
-            node.ctx_idx,
-            input_term.name,
-            lift_node.input_term_idx,
-            HashList::EMPTY,
-            contexts
-        ),
-        "GOT: {} ({}, {})",
-        contexts.to_string(node.ctx_idx),
+    assert!(hash_list_contains(
+        node.ctx_idx,
         input_term.name,
-        lift_node.input_term_idx
-    );
+        lift_node.input_term_idx,
+        HashList::EMPTY,
+        contexts
+    ));
     //assert!(contexts.contains(node.ctx_idx, input_term.name, lift_node.input_term_idx));
     //assert!(lift_node.rule == RULE_LIFT);
     assert!(lift_node.result_term_idx == node.result_term_idx);
@@ -794,7 +788,7 @@ fn check_get_arg(node: &ExpRule, proof: &[ExpRule], terms: &[ExpTerm]) {
     let result_term = &terms[node.result_term_idx];
 
     // no context for these rules...is okay to ignore
-    let count = node.ctx_idx;
+    let count = node.extra;
 
     assert!(input_term.kind == EXPR_APP);
 
@@ -804,7 +798,7 @@ fn check_get_arg(node: &ExpRule, proof: &[ExpRule], terms: &[ExpTerm]) {
         let parent0 = &proof[node.parent0];
 
         assert!(parent0.rule == RULE_GET_ARG);
-        assert!(parent0.ctx_idx == count - 1);
+        assert!(parent0.extra == count - 1);
         assert!(parent0.input_term_idx == input_term.left);
         assert!(parent0.result_term_idx == node.result_term_idx);
     }
@@ -820,7 +814,11 @@ fn check_get_arg(node: &ExpRule, proof: &[ExpRule], terms: &[ExpTerm]) {
 //  elim_apply (nnr-1) 0 e_i rec f => f'
 // --------------------------------------           (apply_nonrec)
 //  elim_apply nnr 0 e_i (f e) => (f' e)
-
+//
+//  elim_apply nnr (nr-1) 0 o e_i rec f => f'
+// ----------------------------------------------    (apply_nr)
+//  elim_apply nnr nr 0 o e_i (f e) => (f' e)
+//
 // elim_apply (nr-1) e_i rec f => f'
 // ----------------------------------------------    (apply_rec)
 //  elim_apply nnr nr e_i (f e) => (f' (rec e))
@@ -835,6 +833,8 @@ fn check_apply_elim(node: &ExpRule, proof: &[ExpRule], terms: &[ExpTerm], induct
     let num_rec_args = node.extra2;
     let rec = node.extra3;
     let e_i = node.extra4;
+    let num_rec_applies = node.extra5;
+    let orig_idx = node.extra6;
 
     // TODO: get and check e_i
     let node_f = input_term.left;
@@ -860,22 +860,52 @@ fn check_apply_elim(node: &ExpRule, proof: &[ExpRule], terms: &[ExpTerm], induct
         assert!(parent0.result_term_idx == result_term.left);
         // e == e
         assert!(input_term.right == result_term.right);
-    } else {
+    } else if num_rec_applies == 0 {
         assert!(parent0.rule == RULE_APPLY_ELIM);
         assert!(parent0.extra == num_nonrec_args);
         assert!(parent0.extra2 == num_rec_args - 1);
 
-        assert!(result_term.kind == EXPR_APP);
+        assert!(result_term.kind == EXPR_APP, "GOT {}", result_term.kind);
 
         //  f == f
         assert!(parent0.input_term_idx == node_f);
         //  f' == f'
         assert!(parent0.result_term_idx == result_term.left);
+    } else {
+        assert!(parent0.rule == RULE_APPLY_ELIM);
+        assert!(parent0.extra == num_nonrec_args);
+        assert!(parent0.extra2 == num_rec_args);
+        assert!(parent0.extra5 == num_rec_applies - 1);
 
+        assert!(result_term.kind == EXPR_APP, "GOT {}", result_term.kind);
+
+        //  f == f
+        if num_rec_applies == 1 {
+            assert!(
+                parent0.input_term_idx == orig_idx,
+                "GOT {}, expect {}",
+                parent0.input_term_idx,
+                orig_idx
+            );
+        } else {
+            assert!(
+                parent0.input_term_idx == node_f,
+                "GOT {}, expect {}",
+                parent0.input_term_idx,
+                node_f
+            );
+        }
+        //  f' == f'
+        assert!(parent0.result_term_idx == result_term.left);
         let result_right = &terms[result_term.right];
 
-        assert!(result_right.kind == EXPR_APP);
-        assert!(result_right.left == rec);
+        assert!(result_right.kind == EXPR_APP, "GOT {}", result_right.kind);
+        assert!(
+            result_right.left == rec,
+            "GOT {} and {}",
+            result_right.left,
+            rec
+        );
 
         // e == e
         assert!(result_right.right == input_term.right);
@@ -1049,7 +1079,7 @@ fn check_eval_ind_sub2(
     let parent0 = &proof[node.parent0];
     let parent1 = &proof[node.parent1];
     let inductive = &inductives[node.inductive];
-    let ind_rule_index = node.extra;
+    let ind_rule_index = node.ind_rule;
     let elim = node.extra2;
 
     let e_tlf = &terms[input_term.top_level_func];

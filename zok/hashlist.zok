@@ -17,7 +17,7 @@ struct HashLists<N> {
 }
 
 def compute_hashes<N>(HashLists<N> list, field alpha, field beta) -> field[N]:
-    field[N] hashes = [0; N]
+    field[N] hashes = [1; N]
     for field i in 0..u32_to_field(N) do
         HashNode curr = list.nodes[i]
         HashNode prev = list.nodes[curr.prev]

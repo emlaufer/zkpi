@@ -37,6 +37,7 @@ def is_eval_rule(field rule) -> bool:
         || rule == RULE_EVAL_APP_PI \
         || rule == RULE_EVAL_LAM \
         || rule == RULE_EVAL_PI \
+        || rule == RULE_EVAL_AX \
         || rule == RULE_PROOF_IRREL \
         || rule == RULE_EVAL_IND \
         || rule == RULE_EVAL_TRANSITIVE
@@ -53,12 +54,6 @@ def is_type_rule(field rule) -> bool:
         || rule == RULE_TYPE_IND \
         || rule == RULE_TYPE_IND_CTOR \
         || rule == RULE_TYPE_IND_REC
-
-def is_valid_rule(field rule) -> bool:
-    return is_eval_rule(rule) || is_type_rule(rule) ||\
-            rule == RULE_GET_ARG || rule == RULE_IND_PREFIX || rule == RULE_APPLY_ELIM\
-            || rule == RULE_EVAL_APP_LAM_SUB || rule == RULE_TYPE_APP_SUB || rule == RULE_TYPE_PI_SUB || rule == RULE_PROOF_IRREL_SUB1\
-            || rule == RULE_EVAL_IND_SUB1 || rule == RULE_EVAL_IND_SUB2
 
 def check_lift(ExpLift node, ExpLift[NUM_LIFTS] lifts, ExpTerm[NUM_TERMS] terms) -> bool:
     ExpTerm input_term = terms[node.input_term_idx]
@@ -712,7 +707,7 @@ def check_eval_ind_sub1(ExpRule node, ExpRule[PROOF_SIZE] proof, ExpTerm[NUM_TER
     ExpRule parent0 = proof[node.parent0]
     ExpRule parent1 = proof[node.parent1]
     ExpInd inductive = inductives[node.inductive]
-    field ind_rule_index = node.extra
+    field ind_rule_index = node.ind_rule
 
     // TODO: check f is ind elim
 
@@ -740,10 +735,8 @@ def check_eval_ind_sub2(ExpRule node, ExpRule[PROOF_SIZE] proof, ExpTerm[NUM_TER
     res = res && e_tlf.ind_ctor == ind_rule_index
 
     res = res && parent1.rule == RULE_APPLY_ELIM_EVAL
-    res = res && hash_list_contains(inductive.rule_nnrs, input_term.ind_ctor, parent1.extra, node.ind_nnr_quot, nnrs, alpha, beta, nnr_hashes)
-    res = res && hash_list_contains(inductive.rule_nrs, input_term.ind_ctor, parent1.extra2, node.ind_nr_quot, nrs, alpha, beta, nr_hashes)
-    //res = res && inductive.rule_nnrs[ind_rule_index] == parent1.extra // nnr
-    //res = res && inductive.rule_nrs[ind_rule_index] == parent1.extra2 // nr
+    res = res && hash_list_contains(inductive.rule_nnrs, ind_rule_index, parent1.extra, node.ind_nnr_quot, nnrs, alpha, beta, nnr_hashes)
+    res = res && hash_list_contains(inductive.rule_nrs, ind_rule_index, parent1.extra2, node.ind_nr_quot, nrs, alpha, beta, nr_hashes)
     res = res && node.extra3 == parent1.extra3
     res = res && node.extra2 == parent1.extra4 // e_i == e_i
     res = res && parent1.input_term_idx == node.input_term_idx
@@ -789,7 +782,7 @@ def check_get_arg(ExpRule node, ExpRule[PROOF_SIZE] proof, ExpTerm[NUM_TERMS] te
     ExpRule parent0 = proof[node.parent0]
 
     // no context for these rules...is okay to ignore
-    field count = node.ctx_idx
+    field count = node.extra
 
     bool res = input_term.kind == EXPR_APP
 
@@ -797,7 +790,7 @@ def check_get_arg(ExpRule node, ExpRule[PROOF_SIZE] proof, ExpTerm[NUM_TERMS] te
         node.result_term_idx == input_term.right\
     else\
         parent0.rule == RULE_GET_ARG\
-        && parent0.ctx_idx == count - 1\
+        && parent0.extra == count - 1\
         && parent0.input_term_idx == input_term.left\
         && parent0.result_term_idx == node.result_term_idx\
     fi
@@ -830,6 +823,7 @@ def check_apply_elim(ExpRule node, ExpRule[PROOF_SIZE] proof, ExpTerm[NUM_TERMS]
     field rec = node.extra3
     field e_i = node.extra4
     field num_applies = node.extra5
+    field orig_idx = node.extra6
 
     // TODO: get and check e_i
     field node_f = input_term.left
@@ -863,12 +857,15 @@ def check_apply_elim(ExpRule node, ExpRule[PROOF_SIZE] proof, ExpTerm[NUM_TERMS]
                 && input_term.right == result_term.right\
             else\
                 parent0.rule == RULE_APPLY_ELIM\
-                && parent0.extra == num_nonrec_args-1\
-                && parent0.extra2 == 0\
+                && parent0.extra == num_nonrec_args\
+                && parent0.extra2 == num_rec_args\
+                && parent0.extra5 == num_applies-1\
                 && result_term.kind == EXPR_APP\
-                && parent0.input_term_idx == node_f\
+                && if num_applies == 1 then parent0.input_term_idx == orig_idx else parent0.input_term_idx == node_f fi\
                 && parent0.result_term_idx == result_term.left\
-                && input_term.right == result_term.right\
+                && result_right.kind == EXPR_APP\
+                && result_right.left == rec\
+                && input_term.right == result_right.right\
             fi\
         fi\
     fi
@@ -901,7 +898,6 @@ def check_apply_elim_eval(ExpRule node, ExpRule[PROOF_SIZE] proof, ExpTerm[NUM_T
     res = res && node_epp == p1_epp
     res = res && p0_ep == p1_ep
 
-    // TODO: need to check elim_apply args....
     res = res && parent0.extra == node.extra
     res = res && parent0.extra2 == node.extra2
     res = res && parent0.extra3 == node.extra3
@@ -971,31 +967,10 @@ def main(\
     HashLists<NUM_NRS> rule_nrs,\
     field[NUM_AXIOMS] axioms\
 ) -> bool:
-    //field expected_idx,
-
-    //check_terms(terms);
-    //check_axioms(public_terms, terms);
-    // TODO: add null term
-
-    //    assert!(
-    //        proof[proving_rule].result_term_idx == expected_type,
-    //        "Expected: {:?}, Got: {:?}",
-    //        term_to_string(expected_type, &terms, db_axiom_rev_map, db_ind_rev_map),
-    //        term_to_string(
-    //            proof[proving_rule].result_term_idx,
-    //            &terms,
-    //            db_axiom_rev_map,
-    //            db_ind_rev_map
-    //        ),
-    //    );
     field[CONTEXT_SIZE] ctx_hashes = compute_hashes(contexts, alpha, beta)
     field[NUM_NNRS] nnr_hashes = compute_hashes(rule_nnrs, alpha, beta)
     field[NUM_NRS] nr_hashes = compute_hashes(rule_nrs, alpha, beta)
     field[NUM_RULES] rule_hashes = compute_hashes(rules, alpha, beta)
-    bool hash_list_valid = true
-    //bool hash_list_valid = hash_list_well_formed(contexts, alpha, beta)
-    //hash_list_valid = hash_list_valid && hash_list_well_formed(rule_nrs, alpha, beta)
-    //hash_list_valid = hash_list_valid && hash_list_well_formed(rule_nnrs, alpha, beta)
 
     // check prefix
     for field i in 0..NUM_PUB_TERMS do
@@ -1044,8 +1019,6 @@ def main(\
 
     bool proof_irrel_ok = true
 
-    bool rules_valid = true
-
     for field i in 0..NUM_LIFTS do
         ExpLift lift = lifts[i]
         lifts_ok = lifts_ok && check_lift(lift, lifts, terms)
@@ -1087,11 +1060,9 @@ def main(\
 
         proof_irrel_ok = proof_irrel_ok && if node.rule == RULE_PROOF_IRREL then check_proof_irrel(node, proof, terms) else true fi
         proof_irrel_ok = proof_irrel_ok && if node.rule == RULE_PROOF_IRREL_SUB1 then check_proof_irrel_sub1(node, proof, terms) else true fi
-
-        rules_valid = rules_valid && is_valid_rule(node.rule)
     endfor
 
     bool evals_ok = eval_id_ok && eval_transitive_ok && eval_var_ok && eval_pi_ok && eval_app_ok && eval_app_lam_ok && eval_ind_ok && get_arg_ok && apply_elim_ok && eval_apply_elim_ok && ind_pref_ok
     bool types_ok = type_var_ok && type_sort_ok && type_lam_ok && type_pi_ok && type_app_ok && type_ax_ok && eval_type_ok && type_ind_ok && type_ind_ctor_ok && type_ind_rec_ok
 
-    return lifts_ok && evals_ok && types_ok && proof_irrel_ok && rules_valid && hash_list_valid
+    return lifts_ok && evals_ok && types_ok && proof_irrel_ok
