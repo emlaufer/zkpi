@@ -10,7 +10,7 @@ parser = argparse.ArgumentParser(
             description='Run one-shot proofs from zkpi in a single command')
 parser.add_argument('-l', '--lean-file')
 parser.add_argument('-e', '--export-file')
-parser.add_argument('-n', '--no-cleanup')
+parser.add_argument('-n', '--no-cleanup', action=argparse.BooleanOptionalAction)
 parser.add_argument('--lean_cmd', default='lean')
 parser.add_argument('-c', '--circuit-directory', default='zok')
 parser.add_argument('--circ-exe', default='circ')
