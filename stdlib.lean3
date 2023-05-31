@@ -1,0 +1,26 @@
+
+import data.buffer data.dlist data.vector
+  smt.arith smt.array smt.default smt.prove
+  system.io system.io_interface system.random
+
+
+#print psigma.mk
+#print psigma.rev_lex.rec
+#print psigma.rev_lex
+
+#print has_lt.rec
+#print has_lt
+
+#print has_well_founded.rec
+
+#print unification_constraint.rec
+
+#print eq.rec
+
+#print tactic.unfold_proj_config
+#print tactic.unfold_proj_config.rec
+
+#print eq.rec
+#print tactic.unfold_proj_config
+
+#print int.rec
