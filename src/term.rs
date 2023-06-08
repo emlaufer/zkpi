@@ -700,7 +700,6 @@ impl Inductive {
         //println!("rule_params: {:?}", rule_params);
 
         for (param_index, param) in rule_params.iter().enumerate() {
-            //println!("generating premise param: {}", param_index);
             minor_premise_args.push(
                 eval.lift_inner(param.clone(), rule_index as isize + 1, param_index)
                     .unwrap(),
@@ -792,22 +791,17 @@ impl Inductive {
             bound(minor_premise_args.len() + minor_premise_motive_args.len() + rule_index);
         let mut premise_body_apps = vec![motive_binding];
         // lift global params
-        //println!("rule body: {}", rule.ty.body());
-        //println!(
-        //    "rule_params.len() {}, total lift: {}",
-        //    rule_params.len(),
-        //    (minor_premise_motive_args.len() + rule_index + 1)
-        //);
-        // TODO: do I need to separately lift global params? No right?
+        // lift any args that refer to global params out byond the motive
+        // and prior minor premises (e.g. this is usually a global sort param)
         let result_args = &eval
             .lift_inner(
                 rule.ty.body(),
-                (minor_premise_motive_args.len() + rule_index + 1) as isize,
+                (rule_index + 1) as isize,
                 rule_params.len(),
                 //rule_params.len(),
             )
             .unwrap();
-        //println!("first lift: {}", result_args);
+        // lift args beyond the new motive params we introduced
         let result_args = &eval
             .lift_inner(
                 result_args.clone(),
@@ -817,8 +811,6 @@ impl Inductive {
             )
             .unwrap()
             .app_args()[self.num_params..];
-        //println!("second lift: {:?}", result_args);
-        //println!("got result args: {:?}", result_args);
         premise_body_apps.extend_from_slice(result_args);
 
         // inductive arg for the minor_premise body
@@ -850,7 +842,6 @@ impl Inductive {
         result.extend(minor_premise_motive_args);
         result.push(premise_body);
         let result = pi_list(&result);
-        //println!("minor premise for {:?}: \n\t{:?}", rule.ty, result);
         result
         //let mut ind_app_list = vec![axiom(rule.name.clone())];
         //for param_index in 0..self.ty.params().len() {
@@ -1800,6 +1791,8 @@ impl Evaluator {
                         println!("term: {}", term);
                         println!("f_ty: {}", f_ty);
                         println!("e: {}", e);
+                        println!("context: {:?}", context);
+                        println!("e_ty: {}", e_ty);
                         //println!("domain: {}", domain_value);
                         return Err(format!(
                             "Type mismatch: got {}, expected: {}",
