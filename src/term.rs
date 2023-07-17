@@ -359,6 +359,13 @@ impl Inductive {
             .map(|(index, term)| (term.name.clone(), index))
             .collect();
 
+        if ty.params().len() != num_params {
+            panic!(
+                "Indutive families are unsupported (inductive {} : {:?}, {} global params)",
+                name, ty, num_params
+            );
+        }
+
         // TODO: check consistency
         let mut res = Inductive {
             name: name.to_string(),
@@ -554,6 +561,7 @@ impl Inductive {
     }
 
     pub fn generate_elim_body(&mut self) {
+        //println!("GENERATING ELIM BODY FOR {}", self.name);
         let mut eval = Evaluator::empty();
 
         // When the environment is impredicative and l_k is zero, then we use nondependent elimination, and we omit
@@ -787,10 +795,18 @@ impl Inductive {
         //println!("generating premise body");
         //println!("rule body: {:?}", rule.ty.body());
         //println!("num params: {:?}", self.num_params);
+        //println!("minor premise params: {:?}", minor_premise_args);
+        //println!("minor premise motive_args: {:?}", minor_premise_motive_args);
         let motive_binding =
             bound(minor_premise_args.len() + minor_premise_motive_args.len() + rule_index);
         let mut premise_body_apps = vec![motive_binding];
         // lift global params
+        //println!("rule body: {}", rule.ty.body());
+        //println!(
+        //    "rule_params.len() {}, total lift: {}",
+        //    rule_params.len(),
+        //    (minor_premise_motive_args.len() + minor_premise_motive_args.len() + rule_index + 1)
+        //);
         // lift any args that refer to global params out byond the motive
         // and prior minor premises (e.g. this is usually a global sort param)
         let result_args = &eval
@@ -811,6 +827,8 @@ impl Inductive {
             )
             .unwrap()
             .app_args()[self.num_params..];
+        //println!("second lift: {:?}", result_args);
+        //println!("got result args: {:?}", result_args);
         premise_body_apps.extend_from_slice(result_args);
 
         // inductive arg for the minor_premise body
@@ -842,6 +860,7 @@ impl Inductive {
         result.extend(minor_premise_motive_args);
         result.push(premise_body);
         let result = pi_list(&result);
+        //println!("minor premise for {:?}: \n\t{:?}", rule.ty, result);
         result
         //let mut ind_app_list = vec![axiom(rule.name.clone())];
         //for param_index in 0..self.ty.params().len() {
@@ -904,6 +923,18 @@ impl InductiveRule {
             name: name.to_string(),
             ty,
         }
+    }
+
+    pub fn num_recs(&self, inductive: &Inductive) -> usize {
+        let mut count = 0;
+        for arg in self.ty.params().iter().rev() {
+            if matches!(*arg.top_level_func(), TermData::Ind(ref name) if name == &inductive.name) {
+                count += 1;
+            } else {
+                break;
+            }
+        }
+        return count;
     }
 }
 
@@ -1399,6 +1430,7 @@ impl Evaluator {
             if let Some(rec_res) =
                 self.try_eval_rec(res.clone(), context, typing_context, max_depth)
             {
+                //println!("EVAL REC: {:?} ===> \n\t {:?}", res, rec_res);
                 rec_res
             } else {
                 res
@@ -1425,6 +1457,26 @@ impl Evaluator {
             //println!("GOT EVAL: {} => {}", term, res);
         }
         Ok(res)
+    }
+
+    // unwrap apps from a term untill there are only num left.
+    // This is used to get the rec correctly...
+    fn get_inner_apps(&mut self, term: Term, num: usize) -> Term {
+        // get the number of apps for this term
+        let mut curr_term = term.clone();
+        let mut num_apps = 0;
+        while let TermData::App(f, _) = &*curr_term {
+            num_apps += 1;
+            curr_term = f.clone();
+        }
+        let mut curr_term = term.clone();
+        let mut num_to_remove = num_apps - num;
+        while num_to_remove > 0 && let TermData::App(f, _) = &*curr_term {
+            num_to_remove -= 1;
+            curr_term = f.clone();
+        }
+
+        return curr_term;
     }
 
     // TODO: this is disgusting
@@ -1466,12 +1518,22 @@ impl Evaluator {
                         //    argument.app_args()[inductive.global_params().len()..].to_vec();
                         //println!("Rule args are: {:?}", rule_args);
 
-                        let rec = match &*term {
-                            TermData::App(f, _) => f,
-                            _ => {
-                                panic!("Not an app");
-                            }
-                        };
+                        // we need to get the right number of args for the rec...
+                        // which is equal to
+                        //
+                        //
+
+                        // OK...here is what we will do...
+                        // So we will just restrict the inductive definitions a bit
+                        // Any index family params that are passed into the type constructor
+                        // should come LAST in the rule....
+                        // that way we should be able to get them correctly...
+                        let rec = self.get_inner_apps(
+                            term.clone(),
+                            inductive.num_params + 1 + inductive.rules.len(),
+                        );
+                        // TOD:O
+                        //println!("GOT REC: {:?}", rec);
 
                         let rule_num = inductive.rule_lookup.get(rule_name).expect(&format!(
                             "Couldn't find rule {} in inductive {}",
@@ -1482,6 +1544,12 @@ impl Evaluator {
                         let rule_args =
                             argument.app_args()[inductive.global_params().len()..].to_vec();
                         let mut rec_args = Vec::new();
+                        let num_rule_args = inductive.rules[*rule_num].ty.params()
+                            [inductive.global_params().len()..]
+                            .len();
+                        let num_index_params = inductive.ty.params().len();
+                        //println!("REC IS: {:?}", rec);
+                        //println!("RULE ARGS IS: {:?}", rule_args);
                         for (i, ty) in inductive.rules[*rule_num].ty.params()
                             [inductive.global_params().len()..]
                             .iter()
@@ -1490,7 +1558,15 @@ impl Evaluator {
                             // if recursive, apply the eliminator again...
                             if let TermData::Ind(ind_name) = &*ty.top_level_func() {
                                 if ind_name == &inductive.name {
-                                    // TODO: can do eval later or even better lazily
+                                    //let index_args = vec![];
+                                    //let num_recs = inductive.rules[*rule_num].num_recs(&inductive);
+                                    //let index_params_start =
+                                    // collect ind args
+                                    //                                    for (i, arg) in ty.app_args().iter().enumerate().rev() {
+                                    //                                        if let TermData::Bound(i) = **arg {}
+                                    //                                    }
+                                    //
+                                    //println!("GOT RULE ARGS: {:?}", rule_args[i]);
                                     rec_args.push(app(rec.clone(), rule_args[i].clone()).clone());
                                 }
                             }
@@ -1500,6 +1576,7 @@ impl Evaluator {
                         elim_app.extend_from_slice(&rule_args);
                         //println!("elim_app no rec is: {:?}", elim_app);
                         elim_app.extend_from_slice(&rec_args);
+                        //println!("rec args: {:?}", rec_args);
 
                         let elim = app_list(&elim_app);
                         let res = self
@@ -1788,11 +1865,11 @@ impl Evaluator {
                         ////    "acc.{{1}}.rec.{{1}}: {:?}",
                         ////    self.axioms.get("acc.{1}.rec.{1}")
                         ////);
-                        println!("term: {}", term);
-                        println!("f_ty: {}", f_ty);
-                        println!("e: {}", e);
-                        println!("context: {:?}", context);
-                        println!("e_ty: {}", e_ty);
+                        //println!("term: {}", term);
+                        //println!("f_ty: {}", f_ty);
+                        //println!("e: {}", e);
+                        //println!("context: {:?}", context);
+                        //println!("e_ty: {}", e_ty);
                         //println!("domain: {}", domain_value);
                         return Err(format!(
                             "Type mismatch: got {}, expected: {}",
