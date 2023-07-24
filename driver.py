@@ -4,6 +4,8 @@ import argparse
 import subprocess
 import sys
 import os
+import time
+from timeit import Timer
 
 parser = argparse.ArgumentParser(
             prog='zkPiDriver',
@@ -14,6 +16,7 @@ parser.add_argument('-n', '--no-cleanup', action=argparse.BooleanOptionalAction)
 parser.add_argument('--lean_cmd', default='lean')
 parser.add_argument('-c', '--circuit-directory', default='zok')
 parser.add_argument('--circ-exe', default='circ')
+parser.add_argument('--time', action=argparse.BooleanOptionalAction)
 parser.add_argument('theorem_name')
 args = parser.parse_args()
 
@@ -66,8 +69,8 @@ template = template.replace("__NUM_LIFTS", sizes[3])
 template = template.replace("__NUM_INDS", sizes[4])
 template = template.replace("__NUM_PUB_TERMS", sizes[5])
 template = template.replace("__NUM_RULES", sizes[6])
-template = template.replace("__NUM_RULES", sizes[7])
-template = template.replace("__NUM_RULES", sizes[8])
+template = template.replace("__NUM_NNRS", sizes[7])
+template = template.replace("__NUM_NRS", sizes[8])
 template = template.replace("__NUM_AXIOMS", sizes[9])
 meta_file.write(template)
 
@@ -77,10 +80,14 @@ meta_file.close()
 # write pin file
 pin_file = "{}/{}.pin".format(args.circuit_directory, args.theorem_name)
 input_file = open(pin_file, "w+");
+start = time.process_time()
 p = subprocess.run(["cargo", "run", "--release", export_file, "export", args.theorem_name], capture_output=True)
 if p.returncode != 0:
     print('Failed to convert theorem {}...'.format(args.theorem_name))
     exit(1)
+duration = time.process_time() - start
+if args.time is not None:
+    print(f"Simplify/Export time: {duration}")
 
 input_file.write(p.stdout.decode())
 input_file.close()
@@ -93,10 +100,11 @@ if not args.no_cleanup and args.lean_file is not None:
 # oneshot proof
 print('Running oneshot zkpi proof')
 
+circ_exe = os.path.abspath(args.circ_exe)
 os.chdir(args.circuit_directory)
-p = subprocess.run([args.circ_exe, '--language', 'Zsharp', 'eval.zok', 'r1cs', '--proof-system', 'mirage', '--action', 'oneshot', '--inputs', "{}.pin".format(args.theorem_name)])
+p = subprocess.run([circ_exe, '--language', 'Zsharp', 'eval.zok', 'r1cs', '--proof-system', 'mirage', '--action', 'oneshot', '--inputs', "{}.pin".format(args.theorem_name)])
 
 # cleanup
 if not args.no_cleanup:
-    os.remove(pin_file)
+    os.remove("{}.pin".format(args.theorem_name))
 
