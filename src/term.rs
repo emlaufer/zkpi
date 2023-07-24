@@ -213,7 +213,8 @@ impl Theorem {
         //let inds: Vec<Inductive> = self.inductives.values().cloned().collect();
         //println!("statement: {:?}\n :: {:?}", self.val, self.ty);
         let mut eval = Evaluator::new(&self.axioms, self.inductives.clone());
-        //println!("original term: {:?}", self.val);
+        println!("original term: {:?}", self.val);
+        println!("original ty: {:?}", self.ty);
         println!("simplifying...");
         let test_val = {
             let test = eval
@@ -247,6 +248,8 @@ impl Theorem {
                 simplified_ty.size(&mut cache)
             );
         }
+        println!("simpl term: {:?}", test_val);
+        println!("simpl ty: {:?}", simplified_ty);
         //println!("typing term {}...", test_val);
         //println!("expect type {}...", simplified_ty);
         let computed_ty = eval
@@ -359,23 +362,28 @@ impl Inductive {
             .map(|(index, term)| (term.name.clone(), index))
             .collect();
 
-        if ty.params().len() != num_params {
-            panic!(
-                "Indutive families are unsupported (inductive {} : {:?}, {} global params)",
-                name, ty, num_params
-            );
-        }
-
         // TODO: check consistency
         let mut res = Inductive {
             name: name.to_string(),
             num_params,
-            ty,
+            ty: ty.clone(),
             rules: rules.to_vec(),
             rule_lookup,
             non_dependent,
             elim_body: sort(0),
         };
+
+        if ty.params().len() != num_params {
+            // !name.starts_with("eq") && !name.starts_with("heq") && ty.params().len() != num_params {
+            for rule in rules {
+                if rule.num_recs(&res) != 0 {
+                    panic!(
+                        "Inductive families with recursive params are unsupported (inductive {} : {:?}, {} global params)",
+                        name, ty, num_params
+                    );
+                }
+            }
+        }
 
         res.generate_elim_body();
         res
@@ -1865,12 +1873,12 @@ impl Evaluator {
                         ////    "acc.{{1}}.rec.{{1}}: {:?}",
                         ////    self.axioms.get("acc.{1}.rec.{1}")
                         ////);
-                        //println!("term: {}", term);
-                        //println!("f_ty: {}", f_ty);
-                        //println!("e: {}", e);
-                        //println!("context: {:?}", context);
-                        //println!("e_ty: {}", e_ty);
-                        //println!("domain: {}", domain_value);
+                        println!("term: {}", term);
+                        println!("f_ty: {}", f_ty);
+                        println!("e: {}", e);
+                        println!("context: {:?}", context);
+                        println!("e_ty: {}", e_ty);
+                        println!("domain: {}", domain_value);
                         return Err(format!(
                             "Type mismatch: got {}, expected: {}",
                             e_ty_value, domain_value
