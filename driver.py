@@ -80,12 +80,12 @@ meta_file.close()
 # write pin file
 pin_file = "{}/{}.pin".format(args.circuit_directory, args.theorem_name)
 input_file = open(pin_file, "w+");
-start = time.process_time()
+start = time.time_ns()
 p = subprocess.run(["cargo", "run", "--release", export_file, "export", args.theorem_name], capture_output=True)
 if p.returncode != 0:
     print('Failed to convert theorem {}...'.format(args.theorem_name))
     exit(1)
-duration = time.process_time() - start
+duration = time.time_ns() - start
 if args.time is not None:
     print(f"Simplify/Export time: {duration}")
 
@@ -102,7 +102,8 @@ print('Running oneshot zkpi proof')
 
 circ_exe = os.path.abspath(args.circ_exe)
 os.chdir(args.circuit_directory)
-p = subprocess.run([circ_exe, '--language', 'Zsharp', 'eval.zok', 'r1cs', '--proof-system', 'mirage', '--action', 'oneshot', '--inputs', "{}.pin".format(args.theorem_name)])
+p = subprocess.run([circ_exe, '--language', 'Zsharp', 'eval.zok', 'r1cs', '--proof-system', 'mirage', '--action', 'oneshot', '--inputs', "{}.pin".format(args.theorem_name)], stdout=subprocess.PIPE)
+print(p.stdout.decode("utf-8"))
 
 # cleanup
 if not args.no_cleanup:
