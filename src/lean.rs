@@ -807,9 +807,12 @@ impl LeanEncoding {
             return Ok(term::ind_ctor(ind_name_full, rule_name));
         }
 
-        if name_string.starts_with("quot") && name_string != "quot.sound" {
-            return Ok(term::axiom(name_string));
-            //return Err(format!("We don't support quot: {}", name_string));
+        if name_string.starts_with("quot") {
+            if name_string != "quot.sound" {
+                return Ok(term::axiom(name_string));
+            } else {
+                return Err(format!("We don't support quot.sound: {}", name_string));
+            }
         }
 
         // if const is an induction eliminator...

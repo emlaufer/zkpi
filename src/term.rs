@@ -343,6 +343,7 @@ pub struct Inductive {
     rule_lookup: BTreeMap<String, usize>,
 
     pub non_dependent: bool,
+    pub is_family: bool,
 
     /// Cached Eliminator body (without global params or motive)
     pub elim_body: Term,
@@ -370,6 +371,7 @@ impl Inductive {
             rules: rules.to_vec(),
             rule_lookup,
             non_dependent,
+            is_family: false,
             elim_body: sort(0),
         };
 
@@ -377,10 +379,7 @@ impl Inductive {
             // !name.starts_with("eq") && !name.starts_with("heq") && ty.params().len() != num_params {
             for rule in rules {
                 if rule.num_recs(&res) != 0 {
-                    panic!(
-                        "Inductive families with recursive params are unsupported (inductive {} : {:?}, {} global params)",
-                        name, ty, num_params
-                    );
+                    res.is_family = true;
                 }
             }
         }
@@ -1530,6 +1529,14 @@ impl Evaluator {
                         // which is equal to
                         //
                         //
+                        //
+                        //
+                        if inductive.is_family {
+                            panic!(
+                                "Recursing on inductive families with recursive params are unsupported (inductive {} : {:?}, {} global params)",
+                                inductive.name, inductive.ty, inductive.num_params
+                            );
+                        }
 
                         // OK...here is what we will do...
                         // So we will just restrict the inductive definitions a bit
