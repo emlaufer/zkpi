@@ -76,8 +76,28 @@ fn main() -> io::Result<()> {
     let mut num_quot = 0;
 
     if matches!(options.command, Command::List) {
-        for name in &names {
-            println!("{}", name);
+        println!("num thms: {}", names.len());
+        for (i, name) in names.iter().enumerate() {
+            let mut inductives = HashMap::new();
+            let mut axioms = HashMap::new();
+            //27269/97903
+            //for (i, name) in names.iter().enumerate() {
+            //println!("[{}/{}] Exporting: {}", i, names.len(), name);
+            match encoding.export_theorem(&name, &mut axioms, &mut inductives, &mut term_cache) {
+                Ok(theorem) => {
+                    println!("[{}/{}] Getting: {}", i, names.len(), name);
+                    let size = theorem.size(&mut size_cache);
+                    println!("...size {}", size);
+                    smallest.push((name, size));
+                }
+                Err(err) => {
+                    if err.contains("quot") {
+                        num_quot += 1;
+                    }
+                    println!("Failed to export {}: {}", name, err);
+                    failed_to_export += 1;
+                }
+            }
         }
         //for (i, name) in names.iter().enumerate() {
         //    let mut inductives = HashMap::new();
