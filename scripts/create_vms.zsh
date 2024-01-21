@@ -16,7 +16,7 @@ n=$1
 cores=$2
 ty=$3
 
-IMAGE='zkpi-oneshots7'
+IMAGE='zkpi'
 
 function usage {
   echo "Usage: $0 N_VMS CORES" >&2
@@ -40,9 +40,9 @@ names=$(for i in $(seq 1 $n); do; echo -n "vm-$i "; done)
 
 
 gcloud beta compute instances create $=names \
-    --zone us-central1-a \
-    --project soe-collaborative-proof \
-    --image-project soe-collaborative-proof \
+    --zone us-west1-b \
+    --project gcp-zkpi \
+    --image-project gcp-zkpi \
     --image $IMAGE \
     --machine-type=$ty-$cores
 for name in $=names

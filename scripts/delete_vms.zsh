@@ -16,8 +16,8 @@ names=$(cat $VM_FILE | tr '\r' ' ')
 
 gcloud beta compute instances delete $=names \
     --quiet \
-    --zone us-central1-a \
-    --project soe-collaborative-proof
+    --zone us-west1-b \
+    --project gcp-zkpi 
 rm -f $VM_FILE
 rm -f $HOSTS_FILE
 
