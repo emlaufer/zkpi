@@ -990,9 +990,8 @@ impl LeanEncoding {
                 let name_string = self.resolve_name(*name);
                 // a few common defs which can often be left as axioms in terms...
                 if name_string == "is_eq"
-                    || name_string == "mem"
-                    || name_string == "nodup_list_cons"
-                    || name_string == "decidable_bool_eq"
+                //|| name_string == "nodup_list_cons"
+                //|| name_string == "decidable_bool_eq"
                 {
                     let ty_term =
                         self.export_expr(*ty, axioms, inductives, &universes, let_bindings, cache)?;

@@ -197,6 +197,28 @@ impl Theorem {
         axioms: &HashMap<String, Term>,
         inductives: &HashMap<String, Inductive>,
     ) -> Theorem {
+        let mut eval = Evaluator::new(axioms, inductives.clone());
+        let mut inductives = inductives.clone();
+
+        // simplify inductives and axioms...
+        for (name, inductive) in inductives.iter_mut() {
+            for rule in &mut inductive.rules {
+                let new_val = eval
+                    .eval(rule.ty.clone())
+                    .map_err(|e| format!("Simplify val err: {}", e))
+                    .unwrap();
+                //println!("RULE SIMP {}: {:?} => {:?}", rule.name, rule.ty, new_val);
+                let mut cache = Some(HConMap::default());
+                println!(
+                    "simplified {} from size {} to size {}",
+                    rule.name,
+                    rule.ty.size(&mut cache),
+                    new_val.size(&mut cache)
+                );
+                rule.ty = new_val;
+            }
+        }
+
         Theorem {
             val,
             ty,

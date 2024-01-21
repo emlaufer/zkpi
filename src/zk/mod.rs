@@ -28,6 +28,22 @@ const EXPR_IND: usize = 7;
 const EXPR_IND_CTOR: usize = 8;
 const EXPR_IND_REC: usize = 9;
 
+fn kind_to_string(kind: usize) -> &'static str {
+    match kind {
+        0 => "NULL",
+        1 => "VAR",
+        2 => "SORT",
+        3 => "APP",
+        4 => "LAM",
+        5 => "PI",
+        6 => "AX",
+        7 => "IND",
+        8 => "IND_CTOR",
+        9 => "IND_REC",
+        _ => "UNKNOWN",
+    }
+}
+
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct ExpTerm {
     kind: usize,
@@ -2109,9 +2125,10 @@ impl Exporter {
         let mut axioms = theorem.axioms;
 
         let simplified_ty = eval.eval(theorem.ty.clone()).unwrap();
-        let mut exporter = Exporter::with_axioms(simplified_ty, axioms, theorem.inductives);
+        let mut exporter = Exporter::with_axioms(simplified_ty.clone(), axioms, theorem.inductives);
 
         let simplified_val = eval.eval(theorem.val.clone()).unwrap();
+        //println!("Proving {}\n is {}", simplified_val, simplified_ty);
         //let simplified_ty = eval.eval(theorem.ty.clone()).unwrap();
         let rule = exporter.export_ty_term(simplified_val)?;
         let result_type = exporter.get_zk_rule(rule).result_term_idx;
@@ -4255,21 +4272,21 @@ impl Exporter {
             }
         };
 
-        // println!(
-        //     "trace ty: {} :: {}",
-        //     term_to_string(
-        //         input_idx,
-        //         &self.zk_input.terms,
-        //         &self.axiom_rev_mapping,
-        //         &self.ind_rev_map
-        //     ),
-        //     term_to_string(
-        //         zk_rule.result_term_idx,
-        //         &self.zk_input.terms,
-        //         &self.axiom_rev_mapping,
-        //         &self.ind_rev_map
-        //     )
-        // );
+        //println!(
+        //    "trace ty: {} :: {}",
+        //    term_to_string(
+        //        input_idx,
+        //        &self.zk_input.terms,
+        //        &self.axiom_rev_mapping,
+        //        &self.ind_rev_map
+        //    ),
+        //    term_to_string(
+        //        zk_rule.result_term_idx,
+        //        &self.zk_input.terms,
+        //        &self.axiom_rev_mapping,
+        //        &self.ind_rev_map
+        //    )
+        //);
 
         Ok(self.add_zk_rule(zk_rule))
     }
