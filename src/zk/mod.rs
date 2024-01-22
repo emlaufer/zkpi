@@ -2680,17 +2680,9 @@ impl Exporter {
         let input = self.get_zk_term(input_idx).clone();
         let tlf = self.get_zk_term(input.top_level_func).clone();
         if tlf.kind == EXPR_IND_REC {
-            //println!(
-            //    "TRYING TO EVAL REC: {:?}",
-            //    term_to_string(
-            //        input_idx,
-            //        &self.zk_input.terms,
-            //        &self.axiom_rev_mapping,
-            //        &self.ind_rev_map
-            //    )
-            //);
             let res = self.export_eval_rec(input_idx, zk_context, context, max_binding);
             if res.is_ok() {
+                let rule = self.get_zk_rule(res.clone().unwrap());
                 return res;
             }
         }
@@ -2956,34 +2948,89 @@ impl Exporter {
                 let res_e = result.right;
                 let exp_e = expected.right;
                 //let (e_subs, e_quot) = self.split_zk_context(zk_context, res_e);
+                //
+                // if one is an App(Lam()) or App(Pi()) and other isn't, need to evaluate...
+                let res_f_term = self.get_zk_term(res_f);
+                let exp_f_term = self.get_zk_term(exp_f);
 
-                let f_rule = if res_f != exp_f {
-                    // recurse
-                    self.export_unify_helper(res_f, exp_f, zk_context, context, max_binding)?
+                if res_f_term.kind == EXPR_LAM && exp_f_term.kind != EXPR_LAM {
+                    let eval_rule = self.export_eval(
+                        result_type,
+                        HashList::EMPTY,
+                        &mut HashMap::new(),
+                        max_binding,
+                    );
+                    let eval_rule_s = self.get_zk_rule(eval_rule).clone();
+                    let unify_rule = self.export_unify_helper(
+                        eval_rule_s.result_term_idx,
+                        expected_type,
+                        zk_context,
+                        context,
+                        max_binding,
+                    )?;
+                    let unify_rule_s = self.get_zk_rule(unify_rule).clone();
+                    ExpRule::eval_ty(
+                        result_type,
+                        unify_rule_s.result_term_idx,
+                        zk_context,
+                        max_binding,
+                        eval_rule,
+                        unify_rule,
+                    )
+                } else if exp_f_term.kind == EXPR_LAM && res_f_term.kind != EXPR_LAM {
+                    // TODO: this may be wrong...
+                    let eval_rule = self.export_eval(
+                        expected_type,
+                        HashList::EMPTY,
+                        &mut HashMap::new(),
+                        max_binding,
+                    );
+                    let eval_rule_s = self.get_zk_rule(eval_rule).clone();
+                    let unify_rule = self.export_unify_helper(
+                        result_type,
+                        eval_rule_s.result_term_idx,
+                        zk_context,
+                        context,
+                        max_binding,
+                    )?;
+                    let unify_rule_s = self.get_zk_rule(unify_rule).clone();
+                    ExpRule::eval_ty(
+                        result_type,
+                        unify_rule_s.result_term_idx,
+                        zk_context,
+                        max_binding,
+                        unify_rule,
+                        eval_rule,
+                    )
                 } else {
-                    let rule = ExpRule::eval_id(res_f, zk_context, max_binding);
-                    self.add_zk_rule(rule)
-                };
+                    let f_rule = if res_f != exp_f {
+                        // recurse
+                        self.export_unify_helper(res_f, exp_f, zk_context, context, max_binding)?
+                    } else {
+                        let rule = ExpRule::eval_id(res_f, zk_context, max_binding);
+                        self.add_zk_rule(rule)
+                    };
 
-                let e_rule = if res_e != exp_e {
-                    // recurse
-                    self.export_unify_helper(res_e, exp_e, zk_context, context, max_binding)?
-                } else {
-                    let rule = ExpRule::eval_id(res_e, zk_context, max_binding);
-                    self.add_zk_rule(rule)
-                };
+                    let e_rule = if res_e != exp_e {
+                        // recurse
+                        self.export_unify_helper(res_e, exp_e, zk_context, context, max_binding)?
+                    } else {
+                        let rule = ExpRule::eval_id(res_e, zk_context, max_binding);
+                        self.add_zk_rule(rule)
+                    };
 
-                ExpRule::eval_app(
-                    result_type,
-                    expected_type,
-                    zk_context,
-                    f_rule,
-                    HashList::EMPTY,
-                    e_rule,
-                    HashList::EMPTY,
-                    max_binding,
-                )
-                // make the rule
+                    ExpRule::eval_app(
+                        result_type,
+                        expected_type,
+                        zk_context,
+                        f_rule,
+                        HashList::EMPTY,
+                        e_rule,
+                        HashList::EMPTY,
+                        max_binding,
+                    )
+                    // make the rule
+                }
             }
             _ => {
                 // attempt proof_irrel unification
@@ -3041,6 +3088,8 @@ impl Exporter {
                     //    res_ty_rule,
                     //    0,
                     //)
+                    //'
+
                     return Err("oof".to_string());
                 }
             }
@@ -4012,7 +4061,7 @@ impl Exporter {
                                         break;
                                     }
                                     println!(
-                                        "Expected: {}\n\nGot: {}\n\nE: {}",
+                                        "Expected: {}\n\nGot: {}\n\nCURR E RES: {}\n\nE: {}",
                                         term_to_string(
                                             domain_ty,
                                             &self.zk_input.terms,
@@ -4021,6 +4070,12 @@ impl Exporter {
                                         ),
                                         term_to_string(
                                             e_result,
+                                            &self.zk_input.terms,
+                                            &self.axiom_rev_mapping,
+                                            &self.ind_rev_map
+                                        ),
+                                        term_to_string(
+                                            curr_e_res,
                                             &self.zk_input.terms,
                                             &self.axiom_rev_mapping,
                                             &self.ind_rev_map
