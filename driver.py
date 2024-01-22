@@ -55,7 +55,7 @@ p = subprocess.run(["cargo", "run", "--release", export_file, "count", args.theo
 if p.returncode != 0:
     print('Failed to convert theorem {}...'.format(args.theorem_name))
     print("output: ", p.stderr.decode("utf-8"))
-    exit(1)
+    exit(p.returncode)
 
 sizes = p.stdout.decode().split(',')
 
