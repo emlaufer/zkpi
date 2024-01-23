@@ -2969,7 +2969,7 @@ impl Exporter {
                         max_binding,
                     )?;
                     let unify_rule_s = self.get_zk_rule(unify_rule).clone();
-                    ExpRule::eval_ty(
+                    ExpRule::eval_transitive(
                         result_type,
                         unify_rule_s.result_term_idx,
                         zk_context,
@@ -2994,7 +2994,7 @@ impl Exporter {
                         max_binding,
                     )?;
                     let unify_rule_s = self.get_zk_rule(unify_rule).clone();
-                    ExpRule::eval_ty(
+                    ExpRule::eval_transitive(
                         result_type,
                         unify_rule_s.result_term_idx,
                         zk_context,
