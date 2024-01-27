@@ -193,11 +193,10 @@ fn eval_inputs(
     //        .get(input)
     //        .unwrap_or_else(|| panic!("No input for {}", input));
     //    let sort2 = value.sort();
-    //    // EVAN: Commenting this out for now...
-//  //      assert_eq!(
-//  //          sort, &sort2,
-//  //          "Sort mismatch for {}. Expected\n\t{} but got\n\t{}",
-//  //          input, sort, sort2
+    //  //      assert_eq!(
+    //  //          sort, &sort2,
+    //  //          "Sort mismatch for {}. Expected\n\t{} but got\n\t{}",
+    //  //          input, sort, sort2
     //    //);
     //}
     //let new_map = prover_data.precompute.eval(inputs_map);
