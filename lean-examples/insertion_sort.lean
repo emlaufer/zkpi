@@ -231,7 +231,7 @@ begin
   exact and.elim_right h,
 end
 
-axiom le_eff_of_not_le {a b : ℕ}: (le_eff a b = ff) -> (le_eff b a)
+axiom le_eff_of_not_le {a b : ℕ}: (le_eff a b = ff) -> (le_eff b a = tt)
 
 def insert_sorted (x : ℕ) (l : list ℕ) : list ℕ :=
   list.rec_on l [x] (λ hd tl prev, bool.rec_on (le_eff x hd) (hd :: prev) (x :: hd :: tl))

@@ -61,9 +61,6 @@ begin
   exact or.intro_left _ h,
 end
 
-def dedup_list : list ℕ -> list ℕ :=
-  λ l, list.rec_on l [] (λ hd tl prev, bool.rec_on (mem hd prev) (prev) (hd :: prev))
-
 def subset : list ℕ -> list ℕ -> Prop :=
   λ s l, list.rec_on s true (λ hd tl prev, (mem hd l) ∧ prev)
 
@@ -127,5 +124,5 @@ def deduped_cons (hd : ℕ) (tl : list ℕ) (prev: deduped_list tl) : deduped_li
     (λ np, deduped_list.mk prev.l prev.p (subset_cons_list prev.l tl hd prev.sub) (subset_cons tl prev.l hd (not_eq_ff_eq_tt np) prev.sub2)) 
     (λ p, deduped_list.mk (hd :: prev.l) (nodup_cons hd prev.l p prev.p) (subset_cons_cons prev.l tl hd prev.sub) (subset_cons_cons tl prev.l hd prev.sub2))
 
-def deduped_list_new : Π (l : list ℕ), deduped_list l :=
+def dedup_list : Π (l : list ℕ), deduped_list l :=
   λ l, list.rec_on l deduped_nil (λ hd tl prev, deduped_cons hd tl prev)
