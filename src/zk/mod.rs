@@ -2804,9 +2804,11 @@ impl Exporter {
         // eta expansion on result
         let exp_body = self.get_zk_term(expected.right).clone();
         let exp_body_right = self.get_zk_term(exp_body.right).clone();
+        let test = self.export_lift(exp_body.left, max_binding, ExpTerm::MAX_BINDING);
+        let test_res = self.get_zk_lift(test).clone();
         if expected.kind == EXPR_LAM
             && exp_body.kind == EXPR_APP
-            && exp_body.left == result_type
+            && test_res.result_term_idx == expected_type
             && exp_body_right.kind == EXPR_VAR
             && exp_body_right.name == expected.name
         {
@@ -2821,14 +2823,17 @@ impl Exporter {
         // eta expansion on result
         let res_body = self.get_zk_term(result.right).clone();
         let res_body_right = self.get_zk_term(res_body.right).clone();
+        let test = self.export_lift(res_body.left, max_binding, ExpTerm::MAX_BINDING);
+        let test_res = self.get_zk_lift(test).clone();
         if result.kind == EXPR_LAM
             && res_body.kind == EXPR_APP
-            && res_body.left == result_type
+            && test_res.result_term_idx == expected_type
             && res_body_right.kind == EXPR_VAR
-            && res_body_right.name == expected.name
+            && res_body_right.name == result.name
         {
-            panic!("eta unsupported");
+            //let lifted_rule = self.export_lift(*result_idx, max_binding, ExpTerm::MAX_BINDING);
             // TODO:
+            panic!("eta unsupported");
             //let eval_exp = ExpRule::eval_id(expected_type, zk_context, max_binding);
             //let eval_exp_idx = self.add_zk_rule(eval_exp);
 
@@ -4094,16 +4099,10 @@ impl Exporter {
                     }
                 }
 
-                // TODO: this is wrong...
                 let mut eval_context = HashMap::new();
                 eval_context.insert(name, e);
                 let eval_zk_context = self.zk_context_insert(HashList::EMPTY, name, e);
-                //let (body_subs, body_quot) = self.split_zk_context(zk_context, body_ty);
-                //println!(
-                //    "Exporting body for: {:?} (max_binding: {})",
-                //    term_to_string(input_idx, &self.zk_input.terms, &self.axiom_rev_mapping),
-                //    max_binding
-                //);
+
                 let body_rule =
                     self.export_eval(body_ty, eval_zk_context, &mut eval_context, max_binding + 1);
                 let body_result = self.get_zk_rule(body_rule).result_term_idx;

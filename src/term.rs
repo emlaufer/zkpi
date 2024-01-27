@@ -210,7 +210,8 @@ impl Theorem {
                 //println!("RULE SIMP {}: {:?} => {:?}", rule.name, rule.ty, new_val);
                 let mut cache = Some(HConMap::default());
                 eprintln!(
-                    "simplified {} from size {} to size {}",
+                    "simplified {}.{} from size {} to size {}",
+                    inductive.name,
                     rule.name,
                     rule.ty.size(&mut cache),
                     new_val.size(&mut cache)

@@ -988,13 +988,14 @@ impl LeanEncoding {
                 universe_params,
             } => {
                 let name_string = self.resolve_name(*name);
-                // a few common defs which can often be left as axioms in terms...
-                if name_string == "is_eq" {
-                    let ty_term =
-                        self.export_expr(*ty, axioms, inductives, &universes, let_bindings, cache)?;
-                    axioms.insert(name_string.clone(), ty_term);
-                    return Ok(term::axiom(name_string));
-                }
+
+                // use to test out leaving some defs as axioms
+                // if name_string == "is_eq" || name_string == "le_eff" {
+                //    let ty_term =
+                //        self.export_expr(*ty, axioms, inductives, &universes, let_bindings, cache)?;
+                //    axioms.insert(name_string.clone(), ty_term);
+                //    return Ok(term::axiom(name_string));
+                // }
 
                 let term =
                     self.export_expr(*val, axioms, inductives, &universes, let_bindings, cache);
