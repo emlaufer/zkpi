@@ -125,9 +125,7 @@ def run_thread(thm_name, vm_name):
         outstrstr = outstr.decode("utf-8")
         if "inductive families with recursive params are unsupported" in str(outstrstr):
             ret_code = -1234 # inductive fams
-        elif "We don't support quot.sound" in str(outstrstr):
-            ret_code = -1235 # quot sound
-        elif "Couldn't find axiom named: quot" in str(outstrstr):
+        elif "Quot" in str(outstrstr):
             ret_code = -1235 # quot sound
         elif "quotient" in str(outstrstr):
             ret_code = -1235
@@ -135,6 +133,8 @@ def run_thread(thm_name, vm_name):
             ret_code = -1236 # eta expansion
         elif "Typing error" in str(outstrstr):
             ret_code = -1237
+        elif "Gigantic NAT..." in str(outstrstr):
+            ret_code = -1238
         else:
             ret_code = out.returncode
 
