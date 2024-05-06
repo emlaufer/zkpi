@@ -1,9 +1,11 @@
 /target
-*.out
 P
 V
 pi
 
 Lean4Examples/.lake
+MathlibTests
+
+mathlib.out
 
 */**/*.pin
