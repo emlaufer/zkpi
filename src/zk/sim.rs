@@ -14,14 +14,6 @@ fn print_rule(
     eval_rule: bool,
 ) {
     let sep = if eval_rule { "=>" } else { "::" };
-    //println!(
-    //    "checking {}: {} |- {:?} {} {:?}",
-    //    rule_str,
-    //    contexts.to_string(ctx),
-    //    to_term(input, terms, db_axiom_rev_map),
-    //    sep,
-    //    to_term(result, terms, db_axiom_rev_map)
-    //);
 }
 
 fn imax(i: usize, j: usize) -> usize {
@@ -29,6 +21,35 @@ fn imax(i: usize, j: usize) -> usize {
         0
     } else {
         max(i, j)
+    }
+}
+
+fn check_context(node: &ExpRule, parent: &ExpRule, quot: usize, contexts: &HashList) -> bool {
+    return hash_list_subset(node.ctx_idx, parent.ctx_idx, quot, contexts);
+}
+
+fn check_eval_parent(parent: &ExpRule, expected_input: usize, expected_result: usize) -> bool {
+    let res = if parent.rule == RULE_EVAL_ID {
+        expected_input == expected_result
+    } else {
+        parent.input_term_idx == expected_input && parent.result_term_idx == expected_result
+    };
+    res
+}
+
+fn get_eval_parent_res(parent: &ExpRule, expected_input: usize) -> usize {
+    if parent.rule == RULE_EVAL_ID {
+        expected_input
+    } else {
+        parent.result_term_idx
+    }
+}
+
+fn get_eval_parent_input(parent: &ExpRule, expected_result: usize) -> usize {
+    if parent.rule == RULE_EVAL_ID {
+        expected_result
+    } else {
+        parent.input_term_idx
     }
 }
 
@@ -44,7 +65,9 @@ pub fn is_eval_rule(rule: usize) -> bool {
         || rule == RULE_EVAL_PI
         || rule == RULE_PROOF_IRREL
         || rule == RULE_EVAL_IND
-        || rule == RULE_EVAL_TRANSITIVE;
+        || rule == RULE_EVAL_TRANSITIVE
+        || rule == RULE_EVAL_PROJ
+        || rule == RULE_EVAL_PROJ_SIMPL;
 }
 
 fn is_type_rule(rule: usize) -> bool {
@@ -58,7 +81,8 @@ fn is_type_rule(rule: usize) -> bool {
         || rule == RULE_TYPE_AX
         || rule == RULE_TYPE_IND
         || rule == RULE_TYPE_IND_CTOR
-        || rule == RULE_TYPE_IND_REC;
+        || rule == RULE_TYPE_IND_REC
+        || rule == RULE_TYPE_PROJ;
 }
 
 /// TODO: problem here....
@@ -79,12 +103,6 @@ fn hash_list_contains(
 }
 
 fn hash_list_subset(list: usize, subset: usize, quot: usize, contexts: &HashList) -> bool {
-    //println!(
-    //    "Checking if {} is a subset of {} (quot: {})",
-    //    contexts.to_string(subset),
-    //    contexts.to_string(list),
-    //    contexts.to_string(quot)
-    //);
     contexts.subset(list, subset, quot)
 }
 
@@ -153,17 +171,6 @@ fn check_type_var(
     contexts: &HashList,
     db_axiom_rev_map: &HashMap<(usize, usize), String>,
 ) {
-    //println!("Checking: {} |- {:?} :: {:?}",
-    //print_rule(
-    //    "TYPE_VAR",
-    //    node.ctx_idx,
-    //    node.input_term_idx,
-    //    node.result_term_idx,
-    //    contexts,
-    //    terms,
-    //    db_axiom_rev_map,
-    //    false,
-    //);
     let input_term = &terms[node.input_term_idx];
     let lift_node = &lifts[node.lift_rule];
 
@@ -217,13 +224,6 @@ fn check_type_app(
     db_axiom_rev_map: &HashMap<(usize, usize), String>,
     db_ind_rev_map: &HashMap<usize, String>,
 ) {
-    //println!(
-    //    "checking: {} |- {:?} :: {:?}",
-    //    contexts.to_string(node.ctx_idx),
-    //    to_term(node.input_term_idx, terms, db_axiom_rev_map),
-    //    to_term(node.result_term_idx, terms, db_axiom_rev_map)
-    //);
-
     let input_term = &terms[node.input_term_idx];
     let result_term = &terms[node.result_term_idx];
 
@@ -278,6 +278,11 @@ fn check_type_app_sub(
 
     assert!(is_type_rule(parent0.rule));
     assert!(is_eval_rule(parent1.rule));
+    assert!(check_eval_parent(
+        parent1,
+        input_term.right,
+        node.result_term_idx
+    ));
     assert!(input_term.kind == EXPR_PI);
 
     assert!(parent0.input_term_idx == node.extra);
@@ -288,9 +293,6 @@ fn check_type_app_sub(
         node.parent0_quot,
         contexts
     ));
-
-    assert!(parent1.input_term_idx == input_term.right);
-    assert!(parent1.result_term_idx == node.result_term_idx);
     // TODO: ctx add (name, a)
     //assert!(hash_list_subset(
     //    node.ctx_idx,
@@ -311,7 +313,6 @@ fn check_type_lam(node: &ExpRule, proof: &[ExpRule], terms: &[ExpTerm]) {
     let input_term = &terms[node.input_term_idx];
     let result_term = &terms[node.result_term_idx];
 
-    // TODO: add A eval...
     let parent0 = &proof[node.parent0];
 
     // ensure node well formed
@@ -387,7 +388,6 @@ fn check_type_pi_sub(node: &ExpRule, proof: &[ExpRule], terms: &[ExpTerm], conte
     let parent0 = &proof[node.parent0];
     let parent1 = &proof[node.parent1];
 
-    assert!(is_eval_rule(parent0.rule));
     assert!(is_type_rule(parent1.rule));
 
     // check contexts equal
@@ -404,9 +404,13 @@ fn check_type_pi_sub(node: &ExpRule, proof: &[ExpRule], terms: &[ExpTerm], conte
         contexts
     ));
 
+    assert!(is_eval_rule(parent0.rule));
+    assert!(check_eval_parent(
+        parent0,
+        node.input_term_idx,
+        parent1.input_term_idx
+    ));
     assert!(node.result_term_idx == parent1.result_term_idx);
-    assert!(parent0.result_term_idx == parent1.input_term_idx);
-    assert!(node.input_term_idx == parent0.input_term_idx);
     assert!(node.extra == parent1.input_term_idx);
 }
 
@@ -429,31 +433,9 @@ fn check_eval_var(
     db_axiom_rev_map: &HashMap<(usize, usize), String>,
     db_ind_rev_map: &HashMap<usize, String>,
 ) {
-    //print_rule(
-    //    "EVAL_VAR",
-    //    node.ctx_idx,
-    //    node.input_term_idx,
-    //    node.result_term_idx,
-    //    contexts,
-    //    terms,
-    //    db_axiom_rev_map,
-    //    true,
-    //);
-    //assert!(node.ctx_id
     let input_term = &terms[node.input_term_idx];
     let lift_node = &lifts[node.lift_rule];
 
-    //println!(
-    //    "Got term: {} (looking for {})",
-    //    term_to_string(
-    //        node.result_term_idx,
-    //        terms,
-    //        db_axiom_rev_map,
-    //        db_ind_rev_map
-    //    ),
-    //    lift_node.input_term_idx
-    //);
-    //println!("zk_context: {:?}", contexts.to_string(node.ctx_idx));
     assert!(hash_list_contains(
         node.ctx_idx,
         input_term.name,
@@ -498,8 +480,6 @@ fn check_eval_lam(node: &ExpRule, proof: &[ExpRule], terms: &[ExpTerm], contexts
     let result_term = &terms[node.result_term_idx];
     let parent0 = &proof[node.parent0];
 
-    assert!(is_eval_rule(parent0.rule));
-
     let parent0_e_idx = parent0.input_term_idx;
     let parent0_v_idx = parent0.result_term_idx;
 
@@ -521,8 +501,8 @@ fn check_eval_lam(node: &ExpRule, proof: &[ExpRule], terms: &[ExpTerm], contexts
 
     assert!(input_term.kind == EXPR_LAM);
     assert!(result_term.kind == EXPR_LAM);
-    assert!(parent0_e_idx == node_e_idx);
-    assert!(parent0_v_idx == node_v_idx);
+    assert!(is_eval_rule(parent0.rule));
+    assert!(check_eval_parent(parent0, node_e_idx, node_v_idx));
 
     // ensure name correct
     assert!(input_term.name == node.max_binding);
@@ -596,21 +576,10 @@ fn check_eval_pi(
     //));
 
     // check rules
-    println!(
-        "got {} \n\n{}",
-        term_to_string(parent0_p_idx, terms, db_axiom_rev_map, db_ind_rev_map),
-        term_to_string(pi_p_idx, terms, db_axiom_rev_map, db_ind_rev_map),
-    );
-    assert!(parent0_t_idx == pi_t_idx);
-    assert!(parent0_p_idx == pi_p_idx);
-
-    assert!(
-        parent1_pp_idx == pi_pp_idx,
-        "Fail: {} {}",
-        term_to_string(parent1_pp_idx, terms, db_axiom_rev_map, db_ind_rev_map),
-        term_to_string(pi_pp_idx, terms, db_axiom_rev_map, db_ind_rev_map),
-    );
-    assert!(parent1_tp_idx == pi_tp_idx);
+    assert!(is_eval_rule(parent0.rule));
+    assert!(is_eval_rule(parent1.rule));
+    assert!(check_eval_parent(parent0, pi_p_idx, pi_t_idx));
+    assert!(check_eval_parent(parent1, pi_pp_idx, pi_tp_idx));
 
     assert!(input_term.name == node.max_binding);
 }
@@ -626,10 +595,6 @@ fn check_eval_app(node: &ExpRule, proof: &[ExpRule], terms: &[ExpTerm], contexts
     let parent0 = &proof[node.parent0];
     let parent1 = &proof[node.parent1];
 
-    println!("parent0: {}", parent0.rule);
-    assert!(is_eval_rule(parent0.rule));
-    assert!(is_eval_rule(parent1.rule));
-
     let parent0_e_idx = parent0.input_term_idx;
     let parent0_n_idx = parent0.result_term_idx;
     let parent1_ep_idx = parent1.input_term_idx;
@@ -642,7 +607,6 @@ fn check_eval_app(node: &ExpRule, proof: &[ExpRule], terms: &[ExpTerm], contexts
 
     // maintain number of lifts
     //res = res && node.num_lifts == parent0.num_lifts && parent0.num_lifts == parent1.num_lifts
-
     // check context same
     assert!(
         hash_list_subset(node.ctx_idx, parent0.ctx_idx, node.parent0_quot, contexts),
@@ -660,10 +624,10 @@ fn check_eval_app(node: &ExpRule, proof: &[ExpRule], terms: &[ExpTerm], contexts
 
     assert!(input_term.kind == EXPR_APP);
     assert!(result_term.kind == EXPR_APP);
-    assert!(parent0_e_idx == node_e_idx);
-    assert!(parent1_ep_idx == node_ep_idx);
-    assert!(parent0_n_idx == node_n_idx);
-    assert!(parent1_vp_idx == node_vp_idx);
+    assert!(is_eval_rule(parent0.rule));
+    assert!(is_eval_rule(parent1.rule));
+    assert!(check_eval_parent(parent0, node_e_idx, node_n_idx));
+    assert!(check_eval_parent(parent1, node_ep_idx, node_vp_idx));
 }
 
 //                            e => v      v:C, b => v'
@@ -693,13 +657,14 @@ fn check_eval_app_lam(
 
     // parent 0 is correct
     assert!(is_eval_rule(parent0.rule));
-    let parent0_result_term = &terms[parent0.result_term_idx];
+    let parent0_result_idx = get_eval_parent_res(parent0, node_f_idx);
+    let parent0_result_term = &terms[parent0_result_idx];
 
     let parent0_f_idx = parent0.input_term_idx;
     let parent0_b_idx = parent0_result_term.right;
 
-    assert!(parent0_result_term.kind == EXPR_LAM);
-    assert!(node_f_idx == parent0_f_idx);
+    assert!(check_eval_parent(parent0, node_f_idx, parent0_result_idx));
+    assert!(parent0_result_term.kind == EXPR_LAM || parent0_result_term.kind == EXPR_PI);
     assert!(
         hash_list_subset(node.ctx_idx, parent0.ctx_idx, node.parent0_quot, contexts),
         "failed subset check: {} = {} U {}",
@@ -713,6 +678,15 @@ fn check_eval_app_lam(
     assert!(parent1.input_term_idx == parent0_b_idx);
     assert!(parent1.result_term_idx == node_vpp_idx);
 }
+
+// collect args
+//
+// ------------------------------------------------
+//              C |- f => C, f
+//
+//         collect_args(b) => C', b'
+// -------------------------------------------------
+//          C |- (f e) => (v: C'), b'
 
 //                            e => v      v:C, b => v'
 //                          --------------------------- (p1)
@@ -738,21 +712,18 @@ fn check_eval_app_lam_sub(
     let node_vpp_idx = node.result_term_idx;
 
     let parent0_e_idx = parent0.input_term_idx;
-    let parent0_v_idx = parent0.result_term_idx;
+    let parent0_v_idx = get_eval_parent_res(parent0, node_e_idx);
     let parent1_b_idx = parent1.input_term_idx;
     let parent1_vp_idx = parent1.result_term_idx;
 
     let lift_vp_idx = lift.input_term_idx;
     let lift_vpp_idx = lift.result_term_idx;
 
-    assert!(node_e_idx == parent0_e_idx);
-    assert!(node_b_idx == parent1_b_idx);
-    assert!(
-        parent1_vp_idx == lift_vp_idx,
-        "got: {} {}",
-        parent1_vp_idx,
-        lift_vp_idx
-    );
+    // TODO: contexts?
+    assert!(is_eval_rule(parent0.rule));
+    assert!(is_eval_rule(parent1.rule));
+    assert!(check_eval_parent(parent0, node_e_idx, parent0_v_idx));
+    assert!(check_eval_parent(parent1, node_b_idx, lift_vp_idx));
     assert!(node_vpp_idx == lift_vpp_idx);
 
     //assert!(hah
@@ -766,12 +737,16 @@ fn check_eval_transitive(node: &ExpRule, proof: &[ExpRule], terms: &[ExpTerm]) {
     let parent0 = &proof[node.parent0];
     let parent1 = &proof[node.parent1];
 
-    assert!(parent0.input_term_idx == node.input_term_idx);
-    assert!(parent1.input_term_idx == parent0.result_term_idx);
-    assert!(parent1.result_term_idx == node.result_term_idx);
-
     assert!(is_eval_rule(parent0.rule));
     assert!(is_eval_rule(parent1.rule));
+    let parent0_res = get_eval_parent_res(parent0, node.input_term_idx);
+    let parent1_inp = get_eval_parent_input(parent1, node.result_term_idx);
+    assert!(check_eval_parent(parent0, node.input_term_idx, parent1_inp));
+    assert!(check_eval_parent(
+        parent1,
+        parent0_res,
+        node.result_term_idx
+    ));
 
     // TODO: CHECK CTXS and stuff
 }
@@ -938,10 +913,9 @@ fn check_apply_elim_eval(
 
     assert!(parent0.rule == RULE_APPLY_ELIM);
     assert!(is_eval_rule(parent1.rule));
+    assert!(check_eval_parent(parent1, p0_ep, node_epp));
 
     assert!(node_e == p0_e);
-    assert!(node_epp == p1_epp);
-    assert!(p0_ep == p1_ep);
 
     // TODO: need to check elim_apply args....
     assert!(parent0.extra == node.extra);
@@ -978,65 +952,6 @@ fn check_eval_ind(node: &ExpRule, proof: &[ExpRule], terms: &[ExpTerm], inductiv
     assert!(parent1.inductive == node.inductive);
     //assert!(parent1.extra == inductive.elim_argc - (inductive.num_params + ind_rule_index + 2));
     assert!(parent1.extra2 == parent0.result_term_idx);
-
-    // TODO:
-    //let parent2 = &proof[node.parent2]; // get_arg
-    //let parent3 = &proof[node.parent3]; // elim_apply_eval
-
-    //let inductive = &inductives[node.inductive];
-
-    //let parent0_fp = parent0.result_term_idx;
-    //let fp_term = &terms[parent0_fp];
-
-    //let parent1_ep = parent1.result_term_idx;
-    //let ep_term = &terms[parent1_ep];
-    //let ep_tlf_term = &terms[ep_term.top_level_func];
-
-    //assert!(is_eval_rule(parent0.rule));
-
-    //// TODO: ensure that e' is valid Ind construction...
-    //assert!(is_eval_rule(parent1.rule));
-
-    //// ensure f' is the induction eliminator
-    //// TODO: this is wrong... fix...
-    ////assert!(fp_term.top_level_func == inductive.elim);
-
-    //// ensure f' has the correct number of args
-    //// TODO: ensure the argc is correct
-    ////assert!(fp_term.argc == inductive.elim_argc);
-
-    //// ensure e' is an induction ctor
-    //println!("ep_tlf_term: {}", ep_tlf_term.kind);
-    //assert!(ep_tlf_term.kind == EXPR_IND_CTOR);
-    //assert!(ep_tlf_term.ind == node.inductive); // the inductive is correct
-    //let ind_rule_index = ep_tlf_term.ind_ctor;
-
-    //// ensure result of parent2 is elim
-    //assert!(parent2.rule == RULE_GET_ARG);
-    //// the arg number is correct
-    //println!(
-    //    "ctx_idx: {} {}",
-    //    parent2.ctx_idx,
-    //    inductive.num_rules - ind_rule_index + 2
-    //);
-    //assert!(parent2.ctx_idx == inductive.elim_argc - (inductive.num_params + ind_rule_index + 2));
-    //let e_i = parent2.result_term_idx;
-
-    //// parent 3 is elim apply eval
-    //assert!(parent3.rule == RULE_APPLY_ELIM_EVAL);
-    //// ensure nnr, nr, rec, and ei are correct in parent3
-    //// SEE constructors for these ExpRules for explanation
-    //assert!(inductive.rule_nnrs[ind_rule_index] == parent3.parent2); // nnr
-    //assert!(inductive.rule_nrs[ind_rule_index] == parent3.parent3); // nr
-    //assert!(input_term.left == parent3.parent0_quot); // rec
-    //assert!(e_i == parent3.parent1_quot); // e_i
-
-    //assert!(parent3.input_term_idx == parent1_ep);
-    //let parent3_epp = parent3.result_term_idx;
-
-    //assert!(node.result_term_idx == parent3_epp);
-
-    //// TODO: check contexts....
 }
 
 //  (f is ind_elim) (get_arg f (ty_args + 1 + i) => e_i) (f has enough args)
@@ -1100,9 +1015,6 @@ fn check_eval_ind_sub2(
         node.ind_nnr_quot,
         nnrs
     ));
-    println!("inductive: {:?}", inductive);
-    println!("idx: {:}", ind_rule_index);
-    println!("quot: {:}", node.ind_nr_quot);
     assert!(hash_list_contains(
         inductive.rule_nrs,
         ind_rule_index,
@@ -1116,17 +1028,7 @@ fn check_eval_ind_sub2(
     assert!(parent1.result_term_idx == node.result_term_idx);
 }
 
-// TODO: This is wrong....
-//       need to have either another index for top level ax terms,
-//       or have a map between axiom indices and top level terms...
-fn check_type_ax(node: &ExpRule, proof: &[ExpRule], lifts: &[ExpLift], max_ax: usize) {
-    // let parent0 = &lifts[node.lift_rule];
-    // //println!("ax term is: {}, max ax: {}", parent0.input_term_idx, max_ax);
-    // assert!(parent0.input_term_idx < max_ax);
-    // assert!(parent0.max_binding == node.max_binding);
-    // //assert!(parent0.rule == RULE_LIFT);
-    // assert!(node.result_term_idx == parent0.result_term_idx);
-}
+fn check_type_ax(node: &ExpRule, proof: &[ExpRule], lifts: &[ExpLift], max_ax: usize) {}
 
 // b :: T   T :: Prop
 // -----------------------
@@ -1205,16 +1107,8 @@ fn check_eval_type(
     let p1_T_idx = parent1.input_term_idx;
     let p1_Tp_idx = parent1.result_term_idx;
 
+    assert!(check_eval_parent(parent1, p0_T_idx, node_Tp_idx));
     assert!(node_a_idx == p0_a_idx);
-    println!(
-        "F: {} :: {}\nT: {} => {}",
-        term_to_string(p0_a_idx, terms, db_axiom_rev_map, db_ind_rev_map),
-        term_to_string(p0_T_idx, terms, db_axiom_rev_map, db_ind_rev_map),
-        term_to_string(p1_T_idx, terms, db_axiom_rev_map, db_ind_rev_map),
-        term_to_string(p1_Tp_idx, terms, db_axiom_rev_map, db_ind_rev_map),
-    );
-    assert!(p0_T_idx == p1_T_idx);
-    assert!(p1_Tp_idx == node_Tp_idx);
 }
 
 // TODO: move
@@ -1355,6 +1249,192 @@ fn check_axioms(axioms: &[ExpTerm], terms: &[ExpTerm]) {
     for i in 0..axioms.len() {
         assert_eq!(axioms[i], terms[i]);
     }
+}
+
+// lean4 extentions
+fn check_eval_proj(
+    node: &ExpRule,
+    proof: &[ExpRule],
+    terms: &[ExpTerm],
+    inductives: &[ExpInd],
+    contexts: &HashList,
+) {
+    let input_term = &terms[node.input_term_idx];
+    let inductive = &inductives[node.inductive];
+    let parent0 = &proof[node.parent0];
+    let parent1 = &proof[node.parent1];
+
+    // 1. parent0 => eval input_term -> e'
+    assert!(is_eval_rule(parent0.rule));
+    // TODO: refactor oportunity...using parent0.result_term.top_level_func adds a lot of overhead...
+    let parent0_res = get_eval_parent_res(parent0, input_term.left);
+    assert!(check_eval_parent(parent0, input_term.left, parent0_res));
+    let evaled_input_term = &terms[parent0_res];
+    let input_tlf = &terms[evaled_input_term.top_level_func];
+
+    assert!(hash_list_subset(
+        node.ctx_idx,
+        parent0.ctx_idx,
+        node.parent0_quot,
+        contexts,
+    ));
+
+    // 1. Input term must be app giving args to ind ctor
+    assert!(evaled_input_term.kind == EXPR_APP);
+    // TODO: check that the ind_ctor has full arguments...);
+    //        THIS MIGHT BE OK to skip IF we type check the expression before we eval...);
+    //        because then we will ALWAYS see );
+    assert!(input_tlf.kind == EXPR_IND_CTOR || input_tlf.kind == EXPR_PROJ_PLACEHOLDER);
+    assert!(
+        input_tlf.ind == node.inductive,
+        "got: {} {}",
+        input_tlf.ind,
+        node.inductive
+    );
+
+    // 2. Inductive must only have a single rule...);
+    //    TODO: not sure if this matters for eval... but check to be safe);
+    assert!(inductive.num_rules == 1, "got: {}", inductive.num_rules);
+
+    // 3. parent0 => inductive.num_params + field_index arg of the input term);
+    assert!(parent1.rule == RULE_GET_ARG);
+    assert!(parent1.extra == input_term.index);
+    assert!(parent1.input_term_idx == parent0_res);
+    assert!(parent1.result_term_idx == node.result_term_idx);
+}
+
+//       lift projector => proj'
+// ----------------------------
+//      Ind => projector
+//
+//     walk_proj(f) => f'
+// ----------------------------
+//      walk_proj(f arg) => (f' arg)
+fn check_walk_proj(
+    node: &ExpRule,
+    proof: &[ExpRule],
+    terms: &[ExpTerm],
+    lifts: &[ExpLift],
+    inductives: &[ExpInd],
+) {
+    let input_term = &terms[node.input_term_idx];
+    let result_term = &terms[node.result_term_idx];
+    let lift = &lifts[node.lift_rule];
+    let parent0 = &proof[node.parent0];
+    let inductive = &inductives[node.inductive];
+    let projector_idx = inductive.projector;
+
+    if input_term.kind == EXPR_APP {
+        assert!(parent0.rule == RULE_WALK_PROJ);
+        assert!(parent0.input_term_idx == input_term.left);
+        assert!(parent0.result_term_idx == result_term.left);
+        assert!(input_term.right == result_term.right);
+    } else {
+        if input_term.kind == EXPR_IND {
+            assert!(lift.input_term_idx == projector_idx);
+            assert!(node.result_term_idx == lift.result_term_idx);
+            assert!(lift.max_binding == node.max_binding);
+            assert!(lift.min_binding_seen == ExpTerm::MAX_BINDING);
+        } else {
+            assert!(false);
+        }
+    }
+}
+
+fn check_constr_proj(
+    node: &ExpRule,
+    proof: &[ExpRule],
+    terms: &[ExpTerm],
+    inductives: &[ExpInd],
+    contexts: &HashList,
+    db_ind_rev_map: &HashMap<usize, String>,
+) {
+    let input_term = &terms[node.input_term_idx];
+    let result_term = &terms[node.result_term_idx];
+    let inductive = &inductives[node.inductive];
+    let parent0 = &proof[node.parent0];
+    let parent1 = &proof[node.parent1];
+
+    let evaled_input_term = &terms[parent0.result_term_idx];
+    let input_tlf = &terms[evaled_input_term.top_level_func];
+
+    // 2. Inductive must only have a single rule...
+    //    TODO: not sure if this matters for eval... but check to be safe
+    assert!(inductive.num_rules == 1);
+
+    // check parent0
+    assert!(parent0.input_term_idx == node.input_term_idx);
+    assert!(is_type_rule(parent0.rule));
+    assert!(hash_list_subset(
+        node.ctx_idx,
+        parent0.ctx_idx,
+        node.parent0_quot,
+        contexts
+    ));
+
+    // check parent1
+    assert!(parent1.rule == RULE_WALK_PROJ);
+    assert!(parent1.inductive == node.inductive);
+    assert!(parent1.input_term_idx == parent0.result_term_idx);
+
+    // check result
+    assert!(result_term.kind == EXPR_APP);
+    assert!(result_term.left == parent1.result_term_idx);
+    assert!(result_term.right == node.input_term_idx);
+}
+
+// just simplifies the inner expr inside the proj
+//     e => e'
+// --------------------------------------
+//   proj(i, e) => proj(i, e')
+fn check_eval_proj_simpl(
+    node: &ExpRule,
+    proof: &[ExpRule],
+    terms: &[ExpTerm],
+    inductives: &[ExpInd],
+    contexts: &HashList,
+) {
+    let input_term = &terms[node.input_term_idx];
+    let result_term = &terms[node.result_term_idx];
+    let parent0 = &proof[node.parent0];
+
+    assert!(input_term.kind == EXPR_PROJ);
+    assert!(result_term.kind == EXPR_PROJ);
+    assert!(is_eval_rule(parent0.rule));
+    assert!(check_eval_parent(
+        parent0,
+        input_term.left,
+        result_term.left
+    ));
+    assert!(check_context(node, parent0, node.parent0_quot, contexts));
+}
+
+fn check_type_proj(node: &ExpRule, proof: &[ExpRule], terms: &[ExpTerm]) {
+    let input_term = &terms[node.input_term_idx];
+    let result_term = &terms[node.result_term_idx];
+    let parent0 = &proof[node.parent0];
+    let parent1 = &proof[node.parent1];
+    let parent1_inp_idx = get_eval_parent_input(parent1, node.result_term_idx);
+    let parent1_inp = &terms[parent1_inp_idx];
+
+    // check well formedness of input term
+    assert!(input_term.kind == EXPR_PROJ);
+
+    // parent0
+    assert!(parent0.rule == RULE_CONSTR_PROJ);
+    assert!(parent0.input_term_idx == input_term.left);
+    assert!(parent0.ctx_idx == node.ctx_idx);
+
+    // parent1
+    assert!(is_eval_rule(parent1.rule));
+    assert!(check_eval_parent(
+        parent1,
+        parent1_inp_idx,
+        node.result_term_idx
+    ));
+    assert!(parent1_inp.kind == EXPR_PROJ);
+    assert!(parent1_inp.left == parent0.result_term_idx);
+    assert!(parent1_inp.index == input_term.index);
 }
 
 fn check_terms(terms: &[ExpTerm]) {
@@ -1505,6 +1585,16 @@ pub fn simulate(
             ),
 
             RULE_EVAL_TRANSITIVE => check_eval_transitive(node, proof, terms),
+
+            // lean4 extensions
+            RULE_EVAL_PROJ => check_eval_proj(node, proof, terms, inductives, contexts),
+
+            RULE_TYPE_PROJ => check_type_proj(node, proof, terms),
+            RULE_CONSTR_PROJ => {
+                check_constr_proj(node, proof, terms, inductives, contexts, db_ind_rev_map)
+            }
+            RULE_WALK_PROJ => check_walk_proj(node, proof, terms, lifts, inductives),
+            RULE_EVAL_PROJ_SIMPL => check_eval_proj_simpl(node, proof, terms, inductives, contexts),
             r => panic!("Unknown rule {}!", r),
         }
     }

@@ -76,35 +76,17 @@ fn main() -> io::Result<()> {
     let mut num_quot = 0;
 
     if matches!(options.command, Command::List) {
-        println!("num thms: {}", names.len());
-        for (i, name) in names.iter().enumerate() {
-            let mut inductives = HashMap::new();
-            let mut axioms = HashMap::new();
-            //27269/97903
-            //for (i, name) in names.iter().enumerate() {
-            //println!("[{}/{}] Exporting: {}", i, names.len(), name);
-            match encoding.export_theorem(&name, &mut axioms, &mut inductives, &mut term_cache) {
-                Ok(theorem) => {
-                    println!("[{}/{}] Getting: {}", i, names.len(), name);
-                    let size = theorem.size(&mut size_cache);
-                    println!("...size {}", size);
-                    smallest.push((name, size));
-                }
-                Err(err) => {
-                    if err.contains("quot") {
-                        num_quot += 1;
-                    }
-                    println!("Failed to export {}: {}", name, err);
-                    failed_to_export += 1;
-                }
-            }
+        for name in names.iter() {
+            println!("{}", name);
         }
+        //println!("num thms: {}", names.len());
         //for (i, name) in names.iter().enumerate() {
         //    let mut inductives = HashMap::new();
         //    let mut axioms = HashMap::new();
+        //    let mut term_cache = Some(HashMap::new());
         //    //27269/97903
         //    //for (i, name) in names.iter().enumerate() {
-        //    //println!("[{}/{}] Exporting: {}", i, names.len(), name);
+        //    println!("[{}/{}] Exporting: {}", i, names.len(), name);
         //    match encoding.export_theorem(&name, &mut axioms, &mut inductives, &mut term_cache) {
         //        Ok(theorem) => {
         //            println!("[{}/{}] Getting: {}", i, names.len(), name);
@@ -120,14 +102,6 @@ fn main() -> io::Result<()> {
         //            failed_to_export += 1;
         //        }
         //    }
-        //}
-
-        //println!("PRINTING:");
-        //// print them comma separated
-        //smallest.sort_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap());
-
-        //for (name, size) in smallest {
-        //    println!("{},{}", name, size);
         //}
         return Ok(());
     }
@@ -185,9 +159,10 @@ fn main() -> io::Result<()> {
         }
         return Ok(());
     } else {
-        for (i, name) in names.iter().enumerate() {
+        for (i, name) in names.iter().enumerate().take(200) {
             let mut inductives = HashMap::new();
             let mut axioms = HashMap::new();
+            let mut term_cache = Some(HashMap::new());
             //27269/97903
             //for (i, name) in names.iter().enumerate() {
             println!("[{}/{}] Exporting: {}", i, names.len(), name);
@@ -219,17 +194,17 @@ fn main() -> io::Result<()> {
             let mut axioms = HashMap::new();
             // skip ones that are just very large constants...
             // we can't handle the size
-            if name.contains("max_steps")
-                || name.contains("std_range")
-                || name.contains("std.priority.max")
-                || name.contains("unsigned_sz")
-                || name.contains("unsigned")
-                || name.contains("name.below")
-                || name.contains("name.ibelow")
-            {
-                println!("skipping {}", name);
-                continue;
-            }
+            //if name.contains("max_steps")
+            //    || name.contains("std_range")
+            //    || name.contains("std.priority.max")
+            //    || name.contains("unsigned_sz")
+            //    || name.contains("unsigned")
+            //    || name.contains("name.below")
+            //    || name.contains("name.ibelow")
+            //{
+            //    println!("skipping {}", name);
+            //    continue;
+            //}
             if let Ok(theorem) = encoding.export_theorem(
                 &name,
                 &mut axioms,
@@ -243,6 +218,7 @@ fn main() -> io::Result<()> {
                 //println!("term: {:?} :: {:?}", theorem.val, theorem.ty);
                 //println!("theorem: {:?}", theorem);
                 if let Err(e) = theorem.prove() {
+                    panic!("Failed on {}, error: {}", name, e);
                     if e.contains("eval eliminator") {
                         println!("error: {}", e);
                         if e.contains("Simplify Type error") {
@@ -260,8 +236,8 @@ fn main() -> io::Result<()> {
                     }
                 }
                 println!("proven!");
-                println!("doing zk sim...");
-                let sim_res = zk::Exporter::simulate(theorem).unwrap();
+                //println!("doing zk sim...");
+                //let sim_res = zk::Exporter::simulate(theorem).unwrap();
                 //if sim_res.is_ok() {
                 //    println!("proven in sim!");
                 //} else {

@@ -91,6 +91,7 @@ impl EvaluationCache {
 
                 domain_res.union(&body_res).cloned().collect()
             }
+            TermData::Proj(name, index, expr) => self.free_bindings_of(expr.clone(), num_bindings),
             _ => HashSet::new(),
         };
 
@@ -127,6 +128,7 @@ impl EvaluationCache {
                         stack.push((domain.clone(), b, 0));
                         //stack.push((body.clone(), b + 1, false));
                     }
+                    TermData::Proj(name, index, expr) => stack.push((expr.clone(), b, 0)),
                     _ => {}
                 };
             } else if children_pushed == 1 {
@@ -171,6 +173,11 @@ impl EvaluationCache {
                             .unwrap();
                         d_res.union(b_res).cloned().collect()
                     }
+                    TermData::Proj(name, index, expr) => self
+                        .free_bindings_cache
+                        .get(&(expr.clone(), b))
+                        .cloned()
+                        .unwrap(),
                     _ => HashSet::new(),
                 };
 
@@ -207,10 +214,10 @@ impl Theorem {
                     .eval(rule.ty.clone())
                     .map_err(|e| format!("Simplify val err: {}", e))
                     .unwrap();
-                //println!("RULE SIMP {}: {:?} => {:?}", rule.name, rule.ty, new_val);
                 let mut cache = Some(HConMap::default());
                 eprintln!(
-                    "simplified {} from size {} to size {}",
+                    "simplified {}.{} from size {} to size {}",
+                    inductive.name,
                     rule.name,
                     rule.ty.size(&mut cache),
                     new_val.size(&mut cache)
@@ -232,8 +239,6 @@ impl Theorem {
     }
 
     pub fn prove(&self) -> Result<(), String> {
-        //let inds: Vec<Inductive> = self.inductives.values().cloned().collect();
-        //println!("statement: {:?}\n :: {:?}", self.val, self.ty);
         let mut eval = Evaluator::new(&self.axioms, self.inductives.clone());
         println!("original term: {:?}", self.val);
         println!("original ty: {:?}", self.ty);
@@ -339,15 +344,12 @@ impl std::fmt::Debug for Context {
             write!(fmt, "[\n")?;
             let max_len = std::cmp::min(self.bindings.len(), 20);
 
-            for item in &self.bindings[..max_len] {
+            for item in &self.bindings {
                 if let Some(expr) = item {
                     write!(fmt, "\t{:?},\n", expr)?;
                 } else {
                     write!(fmt, "\t_,\n")?;
                 }
-            }
-            if self.bindings.len() > 20 {
-                write!(fmt, "...\n")?;
             }
 
             write!(fmt, "]")?;
@@ -356,6 +358,10 @@ impl std::fmt::Debug for Context {
     }
 }
 
+// Lean4 Changes!:
+// - non_dependent ind recursors now include the type as an
+//    arg to the motive
+//   e.g. And.rec = a, b: prop, motive: (And a b, Sort u), ....  motive (And a b)...
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Inductive {
     pub name: String,
@@ -369,6 +375,7 @@ pub struct Inductive {
 
     /// Cached Eliminator body (without global params or motive)
     pub elim_body: Term,
+    pub projector: Option<Term>, // exists for structs...easier typing
 }
 
 impl Inductive {
@@ -395,6 +402,7 @@ impl Inductive {
             non_dependent,
             is_family: false,
             elim_body: sort(0),
+            projector: None,
         };
 
         if ty.params().len() != num_params {
@@ -573,7 +581,6 @@ impl Inductive {
 
         let res = pi_list(&res);
 
-        //println!("Elim for {} is: {}", self.name, res);
         res
     }
 
@@ -686,7 +693,7 @@ impl Inductive {
         let mut final_motive_apps = vec![motive_binding];
 
         // skip actual major premise inductive type if we are non-dependent
-        let motive_args_len = if !self.non_dependent {
+        let motive_args_len = if true {
             major_premise_pis.len()
         } else {
             major_premise_pis.len() - 1
@@ -708,18 +715,18 @@ impl Inductive {
     pub fn generate_motive(&self, motive_universe_level: usize) -> Term {
         let mut res_pi_list = self.index_params();
 
-        if !self.non_dependent {
-            // construct the recursive param
-            let mut ind_app_list = vec![ind(self.name.clone())];
-            let global_bindings = (0..self.global_params().len())
-                .map(|i| bound(self.global_params().len() - 1 - i + res_pi_list.len()));
-            ind_app_list.extend(global_bindings);
-            let index_bindings =
-                (0..self.index_params().len()).map(|i| bound(self.index_params().len() - 1 - i));
-            ind_app_list.extend(index_bindings);
-            let ind = app_list(&ind_app_list);
-            res_pi_list.push(ind);
-        }
+        //if !self.non_dependent {
+        // construct the recursive param
+        let mut ind_app_list = vec![ind(self.name.clone())];
+        let global_bindings = (0..self.global_params().len())
+            .map(|i| bound(self.global_params().len() - 1 - i + res_pi_list.len()));
+        ind_app_list.extend(global_bindings);
+        let index_bindings =
+            (0..self.index_params().len()).map(|i| bound(self.index_params().len() - 1 - i));
+        ind_app_list.extend(index_bindings);
+        let ind = app_list(&ind_app_list);
+        res_pi_list.push(ind);
+        //}
         res_pi_list.push(sort(motive_universe_level));
         pi_list(&res_pi_list)
     }
@@ -771,15 +778,17 @@ impl Inductive {
                             .app_args()[self.num_params..],
                     );
                     // if dependent, add recursive arg to motive
-                    if dependent {
-                        let orig_param_binding = bound(
-                            rule_params.len() - 1 - param_index
+                    // if it is a function, need to pass corresponding args...
+                    let mut orig_param_binding = vec![bound(
+                        rule_params.len() - 1 - param_index
                                 + minor_premise_motive_args.len()
                                 // TODO: check
                                 + params.len(),
-                        );
-                        motive_apps.push(orig_param_binding);
-                    }
+                    )];
+                    orig_param_binding
+                        .extend((0..params.len()).map(|i| bound(params.len() - i - 1)));
+                    motive_apps.push(app_list(&orig_param_binding));
+                    //}
 
                     //let mut params_lifted = params;
                     //println!("minor premise args len: {}", minor_premise_args.len());
@@ -810,32 +819,16 @@ impl Inductive {
 
                     // parameters if the param is a Pi
                     params_lifted.push(app_list(&motive_apps));
-                    //println!(
-                    //    "motive param {}: {:?}",
-                    //    param_index,
-                    //    pi_list(&params_lifted)
-                    //);
                     minor_premise_motive_args.push(pi_list(&params_lifted));
                 }
                 _ => {}
             }
         }
 
-        //println!("generating premise body");
-        //println!("rule body: {:?}", rule.ty.body());
-        //println!("num params: {:?}", self.num_params);
-        //println!("minor premise params: {:?}", minor_premise_args);
-        //println!("minor premise motive_args: {:?}", minor_premise_motive_args);
         let motive_binding =
             bound(minor_premise_args.len() + minor_premise_motive_args.len() + rule_index);
         let mut premise_body_apps = vec![motive_binding];
-        // lift global params
-        //println!("rule body: {}", rule.ty.body());
-        //println!(
-        //    "rule_params.len() {}, total lift: {}",
-        //    rule_params.len(),
-        //    (minor_premise_motive_args.len() + minor_premise_motive_args.len() + rule_index + 1)
-        //);
+
         // lift any args that refer to global params out byond the motive
         // and prior minor premises (e.g. this is usually a global sort param)
         let result_args = &eval
@@ -852,36 +845,33 @@ impl Inductive {
                 result_args.clone(),
                 (minor_premise_motive_args.len()) as isize,
                 0,
-                //rule_params.len(),
             )
             .unwrap()
             .app_args()[self.num_params..];
-        //println!("second lift: {:?}", result_args);
-        //println!("got result args: {:?}", result_args);
+
         premise_body_apps.extend_from_slice(result_args);
 
         // inductive arg for the minor_premise body
-        if dependent {
-            let inductive_arg = {
-                let mut recursive_arg_apps = vec![ind_ctor(self.name.clone(), rule.name.clone())];
-                let global_param_bindings = (0..self.global_params().len()).map(|i| {
-                    bound(
-                        self.global_params().len() - 1 - i
-                            + minor_premise_args.len()
-                            + minor_premise_motive_args.len()
-                            + rule_index
-                            + 1,
-                    )
-                });
-                recursive_arg_apps.extend(global_param_bindings);
-                let rule_param_bindings = (0..rule_params.len())
-                    .map(|i| bound(rule_params.len() - 1 - i + minor_premise_motive_args.len()));
-                recursive_arg_apps.extend(rule_param_bindings);
-                app_list(&recursive_arg_apps)
-            };
-            //println!("inductive arg: {:?}", inductive_arg);
-            premise_body_apps.push(inductive_arg);
-        }
+        //if dependent {
+        let inductive_arg = {
+            let mut recursive_arg_apps = vec![ind_ctor(self.name.clone(), rule.name.clone())];
+            let global_param_bindings = (0..self.global_params().len()).map(|i| {
+                bound(
+                    self.global_params().len() - 1 - i
+                        + minor_premise_args.len()
+                        + minor_premise_motive_args.len()
+                        + rule_index
+                        + 1,
+                )
+            });
+            recursive_arg_apps.extend(global_param_bindings);
+            let rule_param_bindings = (0..rule_params.len())
+                .map(|i| bound(rule_params.len() - 1 - i + minor_premise_motive_args.len()));
+            recursive_arg_apps.extend(rule_param_bindings);
+            app_list(&recursive_arg_apps)
+        };
+        premise_body_apps.push(inductive_arg);
+        //}
 
         let premise_body = app_list(&premise_body_apps);
 
@@ -889,7 +879,6 @@ impl Inductive {
         result.extend(minor_premise_motive_args);
         result.push(premise_body);
         let result = pi_list(&result);
-        //println!("minor premise for {:?}: \n\t{:?}", rule.ty, result);
         result
         //let mut ind_app_list = vec![axiom(rule.name.clone())];
         //for param_index in 0..self.ty.params().len() {
@@ -912,7 +901,6 @@ impl Inductive {
         //full_pi_list.extend(minor_premise_motive_args);
         //full_pi_list.push(result);
         //let res = pi_list(&full_pi_list);
-        //println!("minor premise for {:?}: \n\t{:?}", rule.ty, res);
         //res
     }
 
@@ -1010,6 +998,11 @@ pub enum TermData {
     Ind(String),
     IndCtor(String, String),
     IndRec(String, usize),
+
+    // Lean4 extensions
+    // Primitive Projection
+    Proj(String, usize, Term),
+    ProjTyper(String),
 }
 
 impl TermData {
@@ -1095,7 +1088,6 @@ impl TermData {
             //return 1;
         }
 
-        //println!("this is: {:?}", self);
         let res = match self {
             TermData::Binding(BindingData { domain, body, .. }) => {
                 domain.size(cache).saturating_add(body.size(cache))
@@ -1181,6 +1173,12 @@ impl std::fmt::Display for TermData {
             TermData::Axiom(name) => {
                 write!(fmt, "Axiom({})", name)
             }
+            TermData::Proj(name, index, expr) => {
+                write!(fmt, "Proj({}, {}, {})", name, index, expr)
+            }
+            TermData::ProjTyper(name) => {
+                write!(fmt, "ProjTyper({})", name)
+            }
         }
     }
 }
@@ -1228,6 +1226,10 @@ pub fn pi_list(terms: &[Term]) -> Term {
     curr
 }
 
+pub fn proj(name: String, index: usize, e: Term) -> Term {
+    FACTORY.mk(TermData::Proj(name, index, e))
+}
+
 pub fn app(f: Term, e: Term) -> Term {
     FACTORY.mk(TermData::App(f, e))
 }
@@ -1259,6 +1261,10 @@ pub fn ind_rec<S: AsRef<str>>(ind_name: S, motive_sort: usize) -> Term {
     FACTORY.mk(TermData::IndRec(ind_name.as_ref().into(), motive_sort))
 }
 
+pub fn proj_typer<S: AsRef<str>>(ind_name: S) -> Term {
+    FACTORY.mk(TermData::ProjTyper(ind_name.as_ref().into()))
+}
+
 pub fn garbage_collect() {
     let old_len = FACTORY.read().unwrap().len();
     //if old_len >= *gc_counter.read().unwrap() + 10000 {
@@ -1276,7 +1282,7 @@ pub fn garbage_collect() {
 }
 
 pub struct Evaluator {
-    inductives: HashMap<String, Inductive>,
+    pub inductives: HashMap<String, Inductive>,
     axioms: BTreeMap<String, Term>,
 
     eval_cache: EvaluationCache,
@@ -1317,13 +1323,90 @@ impl Evaluator {
             tmp_test_cache: HashSet::new(),
         };
 
-        //println!("------------------ Checking axioms ------------------");
-        //for (name, axiom) in res.axioms.clone() {
-        //    println!("checking axiom {:?}", name);
-        //    res.ty(axiom.clone()).map_err(|s| format!("While checking axiom {} of type {:?}\nGot error: {}", name, axiom, s)).unwrap();
-        //}
-        //println!("------------------ Done Checking axioms ------------------");
+        for (name, inds) in res.inductives.clone().drain() {
+            res.generate_projector(inds);
+        }
+
         res
+    }
+
+    pub fn generate_projector(&mut self, inductive: Inductive) {
+        if inductive.rules.len() != 1 {
+            return;
+        }
+
+        let mut ind_ctor = inductive.rules[0].clone();
+        let mut ty = inductive.rules[0].ty.clone();
+        let params = inductive.rules[0].ty.params();
+        let mut ctor_params = params[inductive.num_params..]
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        ctor_params.push(ind_ctor.ty.body().clone());
+
+        let ind_ctor_no_type_params = self.lift(pi_list(&ctor_params), 1).unwrap();
+        //let mut param_tys = vec![];
+        //let mut params = vec![];
+        //let mut args = vec![];
+
+        //let mut idx = 0;
+        //let mut context = Context::new();
+        //while true {
+        //    if let TermData::Binding(BindingData { domain, body, .. }) = &*ty {
+        //        let domain_ty = self.ty_with_context(domain.clone(), &mut context).unwrap();
+        //        param_tys.push(domain_ty.clone());
+        //        context.push(domain.clone());
+        //        println!("{}: {}", idx, domain_ty);
+        //        if idx < ind.num_params {
+        //            params.push(domain.clone())
+        //        }
+        //        ty = body.clone();
+        //    } else {
+        //        break;
+        //    }
+        //    idx += 1;
+        //}
+
+        // a b | c d pc2 pd3 4
+        let mut proj_context = Context::new();
+        let mut apps = vec![proj_typer(&inductive.name)];
+        // need to remove universe instantation because lean exporter
+        // doesn't know about them...so we deal with them at runtime
+        let mut ind_name_parts = inductive.name.split('.').collect::<Vec<_>>();
+        let mut ind_name_no_unis = ind_name_parts[0..(ind_name_parts.len() - 1)].join(".");
+        let type_args = inductive.ty.params();
+        for i in 0..params.len() - inductive.num_params {
+            // if we reference another arg, that arg is a proj!
+            let projection_arg = ind_ctor_no_type_params.params()[i].clone();
+            let res = self
+                .eval_with_context(
+                    projection_arg,
+                    &mut proj_context,
+                    &mut Context::new(),
+                    true,
+                    10,
+                )
+                .unwrap();
+            proj_context.push(proj(ind_name_no_unis.clone(), i, bound(i)));
+            apps.push(self.lift(res, -((i) as isize)).unwrap());
+        }
+
+        //let apps = self
+        //    .lift(
+        //        app_list(&apps),
+        //        -((params.len() - inductive.num_params) as isize),
+        //    )
+        //    .unwrap();
+        let apps = app_list(&apps);
+        let mut ind_type = vec![ind(inductive.name.clone())];
+        ind_type.extend((0..inductive.num_params).map(|i| bound(inductive.num_params - i - 1)));
+        let ind_type = app_list(&ind_type);
+        let mut type_args = inductive.ty.params();
+        type_args.push(ind_type);
+        type_args.push(apps);
+        let projection_typer = pi_list(&type_args);
+
+        self.inductives.get_mut(&inductive.name).unwrap().projector = Some(projection_typer);
     }
 
     fn empty() -> Evaluator {
@@ -1368,26 +1451,10 @@ impl Evaluator {
         rec: bool,
         max_depth: usize,
     ) -> Result<Term, String> {
-        //let free_bindings = self.free_bindings_of(term.clone(), 0);
-        //println!(
-        //    "free bindings test: got {:?} (ctx_size: {:?})",
-        //    free_bindings,
-        //    context.len()
-        //);
-
-        //if free_bindings.is_empty() {
-        //    if let Some(res) = self.eval_cache.get(&(term.clone(), Context::new().hash())) {
-        //        return Ok(res.clone());
-        //    }
-        //} else {
-        //if !rec {
         if let Some(res) = self.eval_cache.get(term.clone(), context) {
             return Ok(res.clone());
         }
-        //}
-        //}
 
-        debug!("EVAL: {:?}", term);
         let res = match &*term {
             TermData::Bound(index) => {
                 if let Some(bound_term) = context.get_bound(*index) {
@@ -1433,6 +1500,7 @@ impl Evaluator {
                 }) = &*f_value
                 {
                     context.push(e_value.clone());
+                    typing_context.push(domain.clone());
                     let res = self.eval_with_context(
                         body.clone(),
                         context,
@@ -1441,6 +1509,7 @@ impl Evaluator {
                         max_depth,
                     )?;
                     context.pop();
+                    typing_context.pop();
                     self.lift(res.clone(), -1).map_err(|s| {
                         format!(
                             "{} when evaling term {:?} (with f_value {:?}, e_value {:?}, body_eval {:?})",
@@ -1451,6 +1520,38 @@ impl Evaluator {
                     app(f_value, e_value)
                 }
             }
+            // TODO: better debugging for unimplemented terms?
+            TermData::Proj(name, index, expr) => {
+                let eval_expr =
+                    self.eval_with_context(expr.clone(), context, typing_context, rec, max_depth)?;
+
+                // Attempt to evaluate it...
+                match &*eval_expr.top_level_func() {
+                    TermData::IndCtor(ind_name, rule_name) if ind_name.starts_with(name) => {
+                        let ind = self.inductives.get(ind_name).clone().unwrap_or_else(|| {
+                            // cant find inductive...fail
+                            panic!("Cant find inductive for proj!");
+                        });
+                        if ind.rules.len() != 1 {
+                            return Err("Projection only supported on singletons".to_string());
+                        }
+                        let args = eval_expr.app_args();
+                        args[ind.num_params + *index].clone()
+                    }
+                    TermData::ProjTyper(ind_name) if ind_name.starts_with(name) => {
+                        let ind = self.inductives.get(ind_name).clone().unwrap_or_else(|| {
+                            // cant find inductive...fail
+                            panic!("Cant find inductive for proj!");
+                        });
+                        if ind.rules.len() != 1 {
+                            return Err("Projection only supported on singletons".to_string());
+                        }
+                        let args = eval_expr.app_args();
+                        args[*index].clone()
+                    }
+                    _ => proj(name.to_string(), *index, eval_expr),
+                }
+            }
             _ => term.clone(),
         };
 
@@ -1459,7 +1560,6 @@ impl Evaluator {
             if let Some(rec_res) =
                 self.try_eval_rec(res.clone(), context, typing_context, max_depth)
             {
-                //println!("EVAL REC: {:?} ===> \n\t {:?}", res, rec_res);
                 rec_res
             } else {
                 res
@@ -1481,10 +1581,10 @@ impl Evaluator {
         //}
         //}
 
-        debug!("\n C = {:?}\n |- {:?} => {:?}", context, term, res);
-        if rec {
-            //println!("GOT EVAL: {} => {}", term, res);
-        }
+        debug!(
+            "\n C = {:?}\n T = {:?}\n |- {:?} => {:?}",
+            context, typing_context, term, res
+        );
         Ok(res)
     }
 
@@ -1500,7 +1600,9 @@ impl Evaluator {
         }
         let mut curr_term = term.clone();
         let mut num_to_remove = num_apps - num;
-        while num_to_remove > 0 && let TermData::App(f, _) = &*curr_term {
+        while num_to_remove > 0
+            && let TermData::App(f, _) = &*curr_term
+        {
             num_to_remove -= 1;
             curr_term = f.clone();
         }
@@ -1518,41 +1620,13 @@ impl Evaluator {
         max_depth: usize,
     ) -> Option<Term> {
         if let TermData::IndRec(rec_ind_name, motive_sort) = &*term.top_level_func() {
-            //println!("got top level func {} for {}", name, term);
-            //println!("trying {}", term);
             let args = term.app_args();
             let inductive = self.inductives.get(rec_ind_name).unwrap().clone();
             if args.len() == inductive.elim(*motive_sort).params().len() {
                 let argument = &args[args.len() - 1];
 
-                //println!("trying to eval rec: {:?}", term);
-
                 if let TermData::IndCtor(ctor_ind_name, rule_name) = &*argument.top_level_func() {
                     if rec_ind_name == ctor_ind_name {
-                        //println!("elim: {}", inductive.elim(*motive_sort));
-                        //println!("args are {:?}", args);
-                        //if let Some(elim) = self.elim_cache.get(&term) {
-                        //    let new_res =
-                        //        self.eval_with_context(elim.clone(), context).unwrap();
-                        //    //println!("got eval {}\n\t=> {}", term, new_res);
-                        //    return Some(new_res);
-                        //}
-
-                        // if self.tmp_test_cache.contains(&args) {
-                        //     println!("SEEN BEFORE IN CACHE");
-                        // } else {
-                        //     self.tmp_test_cache.insert(args.clone());
-                        // }
-                        //let rule_args =
-                        //    argument.app_args()[inductive.global_params().len()..].to_vec();
-                        //println!("Rule args are: {:?}", rule_args);
-
-                        // we need to get the right number of args for the rec...
-                        // which is equal to
-                        //
-                        //
-                        //
-                        //
                         if inductive.is_family {
                             panic!(
                                 "Recursing on inductive families with recursive params are unsupported (inductive {} : {:?}, {} global params)",
@@ -1569,8 +1643,6 @@ impl Evaluator {
                             term.clone(),
                             inductive.num_params + 1 + inductive.rules.len(),
                         );
-                        // TOD:O
-                        //println!("GOT REC: {:?}", rec);
 
                         let rule_num = inductive.rule_lookup.get(rule_name).expect(&format!(
                             "Couldn't find rule {} in inductive {}",
@@ -1585,8 +1657,6 @@ impl Evaluator {
                             [inductive.global_params().len()..]
                             .len();
                         let num_index_params = inductive.ty.params().len();
-                        //println!("REC IS: {:?}", rec);
-                        //println!("RULE ARGS IS: {:?}", rule_args);
                         for (i, ty) in inductive.rules[*rule_num].ty.params()
                             [inductive.global_params().len()..]
                             .iter()
@@ -1595,15 +1665,6 @@ impl Evaluator {
                             // if recursive, apply the eliminator again...
                             if let TermData::Ind(ind_name) = &*ty.top_level_func() {
                                 if ind_name == &inductive.name {
-                                    //let index_args = vec![];
-                                    //let num_recs = inductive.rules[*rule_num].num_recs(&inductive);
-                                    //let index_params_start =
-                                    // collect ind args
-                                    //                                    for (i, arg) in ty.app_args().iter().enumerate().rev() {
-                                    //                                        if let TermData::Bound(i) = **arg {}
-                                    //                                    }
-                                    //
-                                    //println!("GOT RULE ARGS: {:?}", rule_args[i]);
                                     rec_args.push(app(rec.clone(), rule_args[i].clone()).clone());
                                 }
                             }
@@ -1611,32 +1672,24 @@ impl Evaluator {
 
                         let mut elim_app = vec![elim.clone()];
                         elim_app.extend_from_slice(&rule_args);
-                        //println!("elim_app no rec is: {:?}", elim_app);
                         elim_app.extend_from_slice(&rec_args);
-                        //println!("rec args: {:?}", rec_args);
 
                         let elim = app_list(&elim_app);
                         let res = self
                             .eval_with_context(elim.clone(), context, typing_context, true, 1000)
                             .unwrap();
-                        //println!("elim_res: {}", res);
-                        //self.elim_cache.insert(term.clone(), elim.clone());
-                        //println!("got elim {}", elim);
-                        //println!("rec eval {}\n\t=> {}", term, res);
 
                         return Some(res);
                     }
                 }
 
-                // OKAY LETS DO IT!!!
                 // wts: if a is def equal to a', then we are good...
-                if inductive.is_subsingleton() && inductive.name == "eq.{2}" {
+                if inductive.is_subsingleton() && inductive.name.starts_with("Eq") {
                     // try to convert the arg to "eq" intro....
 
                     let arg_type = self
                         .ty_with_context(argument.clone(), typing_context)
                         .unwrap();
-                    //println!("Got arg_type: {:?}", arg_type);
 
                     if !matches!(&*arg_type.top_level_func(), TermData::Ind(name) if name == &inductive.name)
                     {
@@ -1661,25 +1714,29 @@ impl Evaluator {
                     for i in 0..num_params {
                         ctor_app = app(ctor_app, type_args[i].clone());
                     }
-
                     // check if the constructed type is definitionally equal to
                     // the arg
-                    if !self.def_equals_with_context(ctor_app, argument.clone(), typing_context) {
+                    if !self.def_equals_with_context(
+                        ctor_app.clone(),
+                        argument.clone(),
+                        typing_context,
+                    ) {
                         return None;
                     }
 
                     // simply return the elim... because it is a subsingleton it
                     // it doesn't depend on anything else
                     let elim = &args[1 + inductive.global_params().len()];
-                    //println!("SUBSINGLE");
+                    println!("CONTEXT: {:?}", typing_context);
+                    println!(
+                        "GOT CTOR: {} for {} (for term: {}) and type: {}",
+                        ctor_app, argument, term, arg_type
+                    );
+
+                    println!("RETURN: {}", elim);
                     return Some(elim.clone());
                 }
             }
-            //println!(
-            //    "not enough args. Got {} expected {}",
-            //    args.len(),
-            //    inductive.elim(0).params().len()
-            //);
         }
 
         None
@@ -1763,16 +1820,14 @@ impl Evaluator {
             return Ok(res.clone());
         }
 
-        //debug!("\n C = {:?}\n Typing {:?}", context, term);
-        //println!("HI");
         let res = match &*term {
             TermData::Bound(index) => {
                 if let Some(bound_term) = context.get_bound(*index) {
                     self.lift(bound_term, *index as isize + 1)?
                 } else {
                     return Err(format!(
-                        "bound var out of range: {:?}, ctx: {:?}",
-                        index, context
+                        "bound var out of range: {:?}, ctx: {:?}, {:?}",
+                        index, context, term
                     ));
                     //Ok(term.clone())
                 }
@@ -1834,10 +1889,18 @@ impl Evaluator {
                             if let TermData::Sort(level) = *evaled_ty {
                                 Ok(level)
                             } else {
-                                //println!(
-                                //    "Axioms: {:?}\nInductives: {:?}\nContext: {:?}\nTerm: {:?}",
-                                //    self.axioms, self.inductives, context, term,
-                                //);
+                                println!(
+                                    "Axioms: {:?}\nInductives: {:?}\nContext: {:?}\nTerm: {:?}",
+                                    self.axioms, self.inductives, context, term,
+                                );
+                                assert!(
+                                    false,
+                                    "{}",
+                                    format!(
+                                        "Body type {:?} of Pi is not a sort! Got: {:?} (in {:?})",
+                                        body, body_ty, term
+                                    )
+                                );
                                 Err(format!(
                                     "Body type {:?} of Pi is not a sort! Got: {:?} (in {:?})",
                                     body, body_ty, term
@@ -1849,7 +1912,6 @@ impl Evaluator {
                 }
             }
             TermData::App(f, e) => {
-                //println!("Context for app! {:?}\n for term {:?}", context, term);
                 let f_ty = self.ty_with_context(f.clone(), context)?;
                 let e_ty = self.ty_with_context(e.clone(), context)?;
 
@@ -1875,7 +1937,6 @@ impl Evaluator {
                         10,
                     )?;
                     self.ty_with_context(e_ty_value.clone(), context).unwrap();
-                    //println!("Context2 for app! {:?}", context);
 
                     //if domain_value != e_ty {
                     if !self.def_equals_with_context(
@@ -1883,25 +1944,6 @@ impl Evaluator {
                         e_ty_value.clone(),
                         context,
                     ) {
-                        //println!("Context3 for app! {:?}", context);
-                        //println!(
-                        //    "Axioms: {:?}\nInductives: {:?}\nContext: {:?}\nTerm: {:?}\nFunc Type: {:?}\nArg Type: {:?}",
-                        //    self.axioms, self.inductives, context, term, f_ty, e_ty
-                        //);
-                        //println!(
-                        //    "Type mismatch: got {:?}, expected: {:?}",
-                        //    e_ty, domain_value
-                        //);
-                        //println!("pprod: {:?}", self.inductives.get("pprod.{1,2}"));
-                        //println!(
-                        //    "Context: {:?}\nTerm: {:?}\nFunc Type: {:?}\nArg Type: {:?}, e_ty_value: {:?}\n",
-                        //    context, term, f_ty, e_ty, e_ty_value
-                        //);
-                        ////println!("domain: {:?}", domain);
-                        ////println!(
-                        ////    "acc.{{1}}.rec.{{1}}: {:?}",
-                        ////    self.axioms.get("acc.{1}.rec.{1}")
-                        ////);
                         println!("term: {}", term);
                         println!("f_ty: {}", f_ty);
                         println!("e: {}", e);
@@ -1941,7 +1983,6 @@ impl Evaluator {
                     // TODO: typing context right?
                     let body_ty =
                         self.eval_with_context(body.clone(), &mut test, context, false, 10)?;
-                    //println!("TYPING {}", body_ty);
                     self.ty_with_context(body_ty.clone(), context)?;
                     test.pop();
                     context.pop();
@@ -1988,11 +2029,39 @@ impl Evaluator {
                     .get(ind_name)
                     .ok_or(format!("Undefined inductive: {}", ind_name))?;
                 let term = ind.elim(*motive_sort);
-                //println!(
-                //    "type of ind elim for {} with sort {}: {}",
-                //    ind_name, motive_sort, term
-                //);
                 term
+            }
+            TermData::Proj(name, index, expr) => {
+                // TODO: proj maybe only works on singletons?
+                // LETS TEST>.. fresh assumption: proj only works on singletons...
+                // or maybe this is a special case?
+
+                let expr_ty = self.ty_with_context(expr.clone(), context)?;
+                let ind = expr_ty.top_level_func();
+
+                if let TermData::Ind(ind_full_name) = &*ind
+                    && ind_full_name.starts_with(name)
+                {
+                    let projector = self.inductives[ind_full_name].projector.clone().unwrap();
+                    let mut apps = vec![projector];
+                    apps.extend(expr_ty.app_args());
+                    apps.push(expr.clone());
+                    let proj_term = proj(name.clone(), *index, app_list(&apps));
+                    let res = self.eval_with_context(
+                        proj_term,
+                        &mut Context::new(),
+                        &mut Context::new(),
+                        true,
+                        10,
+                    );
+                    return res;
+                } else {
+                    return Err("Proj has ind name which doesn't match expr type!".to_string());
+                }
+            }
+            TermData::ProjTyper(name) => {
+                assert!(false, "Should never type a projtyper...");
+                unimplemented!();
             }
         };
 
@@ -2007,66 +2076,22 @@ impl Evaluator {
     }
 
     pub fn def_equals_with_context(&mut self, a: Term, b: Term, context: &mut Context) -> bool {
-        //println!("context def 1!: {:?}", context);
         // fast case
         if a == b {
             return true;
         }
 
-        //println!("EVALING A-----------");
-        // TODO: mvoe down below
         let a = self
             .eval_with_context(a.clone(), &mut Context::new(), context, true, 10)
             .unwrap();
-        //println!("EVALING B-----------");
         let b = self
             .eval_with_context(b.clone(), &mut Context::new(), context, true, 10)
             .unwrap();
-        //println!("DONE----------------");
-        //if a_rec != Ok(a.clone()) {
-        //    println!("eval rec a {} ==> {}", a, a_rec.as_ref().unwrap());
-        //}
-        //if b_rec != Ok(b.clone()) {
-        //    println!("eval rec b {} ==> {}", b, b_rec.as_ref().unwrap());
-        //    //println!("ty: {}", self.eval_with_context(b_rec.as_ref.unwrap().clone(), context, true);
-        //}
 
         if a == b {
             return true;
         }
 
-        // Add trying to eval with recursion here....
-        // that way we only eval recursion when we need to...
-
-        //match (*a, *b) {
-        //    (
-        //        TermData::Binding(BindingData {
-        //            ty: a_ty,
-        //            domain: a_domain,
-        //            body: a_body,
-        //        }),
-        //        TermData::Binding(BindingData {
-        //            ty: b_ty,
-        //            domain: b_domain,
-        //            body: b_body,
-        //        }),
-        //    ) => {
-        //        let mut res = true;
-        //        res &= a_ty == b_ty
-        //            && self.def_equals_with_context(a_domain.clone(), b_domain, context);
-        //        context.push(a_domain);
-        //        res &= self.def_equals_with_context(a_body, b_body, context);
-        //        context.pop();
-        //        res
-        //    }
-        //    (TermData::App(a_f, a_e), TermData::App(b_f, b_e)) => {
-        //        self.def_equals_with_context(a_f, b_f, context)
-        //            && self.def_equals_with_context(a_e, b_e, context)
-        //    },
-        //    (TermData::
-        //}
-
-        //println!("def eq: {:?} {:?}", a, b);
         if let Ok(a_ty) = self.ty_with_context(a.clone(), context) {
             if let Ok(b_ty) = self.ty_with_context(b.clone(), context) {
                 // proof-irrelevance of prop
@@ -2091,7 +2116,6 @@ impl Evaluator {
                             domain.clone(),
                             app(self.lift(b.clone(), 1).unwrap(), bound(0)),
                         );
-                        //println!("expanded b: {:?}", expanded_b);
                         if self.def_equals_with_context(a.clone(), expanded_b, context) {
                             return true;
                         }
@@ -2112,7 +2136,6 @@ impl Evaluator {
                 }
             }
         }
-        //println!("context def 2!: {:?}", context);
 
         // otherwise, recurse structurally
         match (&*a, &*b) {
@@ -2131,40 +2154,16 @@ impl Evaluator {
                 let mut res = true;
                 res &= a_ty == b_ty
                     && self.def_equals_with_context(a_domain.clone(), b_domain.clone(), context);
-                //println!("context def 3!: {:?}", context);
                 context.push(a_domain.clone());
-                //println!("context def 4!: {:?}", context);
                 res &= self.def_equals_with_context(a_body.clone(), b_body.clone(), context);
                 context.pop();
-                //println!("context def 5!: {:?}", context);
                 res
             }
             (TermData::App(a_f, a_e), TermData::App(b_f, b_e)) => {
-                //println!("context def 6!: {:?}", context);
                 self.def_equals_with_context(a_f.clone(), b_f.clone(), context)
                     && self.def_equals_with_context(a_e.clone(), b_e.clone(), context)
             }
-            _ => {
-                // see if recursors are def. equal...
-                //let a_rec_eval = self.try_eval_rec(a.clone(), &mut Context::new(), context, 10);
-                //println!("HEY I GOT {:?}, NEED: {:?}", a_rec_eval, b);
-
-                //if let Some(a_val) = a_rec_eval {
-                //    if a_val == b {
-                //        return true;
-                //    }
-                //}
-
-                //let b_rec_eval = self.try_eval_rec(b.clone(), &mut Context::new(), context, 10);
-                //println!("HEY I GOT {:?}, NEED: {:?}", b_rec_eval, a);
-                //if let Some(b_val) = b_rec_eval {
-                //    if a == b_val {
-                //        return true;
-                //    }
-                //}
-
-                false
-            }
+            _ => false,
         }
     }
 
@@ -2192,6 +2191,11 @@ impl Evaluator {
             TermData::App(f, e) => app(
                 self.lift_inner(f.clone(), amount, depth)?,
                 self.lift_inner(e.clone(), amount, depth)?,
+            ),
+            TermData::Proj(name, index, expr) => proj(
+                name.clone(),
+                *index,
+                self.lift_inner(expr.clone(), amount, depth)?,
             ),
             _ => term.clone(),
         };

@@ -4,3 +4,6 @@ P
 V
 pi
 
+Lean4Examples/.lake
+
+*/**/*.pin

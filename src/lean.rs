@@ -2,13 +2,14 @@ use log::debug;
 use nom::{
     branch::alt,
     bytes::complete::tag,
-    character::complete::{digit1, space0, space1},
+    character::complete::{digit1, hex_digit1, space0, space1},
     combinator::{map_res, recognize},
     multi::{many0, many_m_n, separated_list0},
     sequence::{terminated, tuple},
     IResult,
 };
 use nom_unicode::complete::alphanumeric1;
+use rug::{Assign, Complete, Integer};
 
 use std::cmp::{max, min};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -17,6 +18,10 @@ use crate::term::{self, Inductive, InductiveRule, Term, Theorem};
 
 fn parse_usize(input: &str) -> IResult<&str, usize> {
     map_res(digit1, str::parse)(input)
+}
+
+fn parse_bigint(input: &str) -> IResult<&str, Integer> {
+    map_res(digit1, |s: &str| Integer::parse(s).map(|x| x.complete()))(input)
 }
 
 fn identifier(input: &str) -> IResult<&str, &str> {
@@ -139,11 +144,27 @@ enum Expression {
         val: usize,
         body: usize,
     },
+
+    // Lean 4 additions
+    EJ {
+        name: usize,
+        field: usize,
+        expr: usize,
+    },
+
+    ELN {
+        value: Integer,
+    },
+
+    ELS {
+        string: Vec<u8>,
+    },
 }
 
 fn parse_expression(input: &str) -> IResult<&str, Expression> {
     alt((
-        parse_ev, parse_es, parse_ec, parse_ea, parse_el, parse_ep, parse_ez,
+        parse_ev, parse_es, parse_ec, parse_ea, parse_el, parse_ep, parse_ez, parse_ej, parse_eln,
+        parse_els,
     ))(input)
 }
 
@@ -222,6 +243,34 @@ fn parse_ep(input: &str) -> IResult<&str, Expression> {
             body,
         },
     ))
+}
+
+fn parse_ej(input: &str) -> IResult<&str, Expression> {
+    let (rest, _) = spaced(tag("#EJ"))(input)?;
+    let (rest, name) = spaced(parse_usize)(rest)?;
+    let (rest, field) = spaced(parse_usize)(rest)?;
+    let (rest, expr) = spaced(parse_usize)(rest)?;
+
+    Ok((rest, Expression::EJ { name, field, expr }))
+}
+
+fn parse_eln(input: &str) -> IResult<&str, Expression> {
+    let (rest, _) = spaced(tag("#ELN"))(input)?;
+    let (rest, value) = spaced(parse_bigint)(rest)?;
+
+    Ok((rest, Expression::ELN { value }))
+}
+
+fn parse_els(input: &str) -> IResult<&str, Expression> {
+    let (rest, _) = spaced(tag("#ELS"))(input)?;
+    let (rest, hex) = separated_list0(space1, hex_digit1)(rest)?;
+    // TODO
+    let string = hex
+        .iter()
+        .map(|v| u8::from_str_radix(v, 16).unwrap())
+        .collect::<Vec<_>>();
+
+    Ok((rest, Expression::ELS { string }))
 }
 
 #[derive(Debug)]
@@ -333,26 +382,26 @@ fn parse_inductive(input: &str) -> IResult<&str, Definition> {
 
 #[derive(Debug)]
 enum Instruction {
-    IName(Name),
-    IUniverse(Universe),
-    IExpression(Expression),
+    IName(usize, Name),
+    IUniverse(usize, Universe),
+    IExpression(usize, Expression),
     IDefinition(Definition),
 }
 
 fn parse_name_instr(input: &str) -> IResult<&str, Instruction> {
     let (rest, index) = spaced(parse_usize)(input)?;
     let (rest, name) = parse_name(rest)?;
-    Ok((rest, Instruction::IName(name)))
+    Ok((rest, Instruction::IName(index, name)))
 }
 fn parse_universe_instr(input: &str) -> IResult<&str, Instruction> {
     let (rest, index) = spaced(parse_usize)(input)?;
     let (rest, universe) = parse_universe(rest)?;
-    Ok((rest, Instruction::IUniverse(universe)))
+    Ok((rest, Instruction::IUniverse(index, universe)))
 }
 fn parse_expression_instr(input: &str) -> IResult<&str, Instruction> {
     let (rest, index) = spaced(parse_usize)(input)?;
     let (rest, expression) = parse_expression(rest)?;
-    Ok((rest, Instruction::IExpression(expression)))
+    Ok((rest, Instruction::IExpression(index, expression)))
 }
 fn parse_definition_instr(input: &str) -> IResult<&str, Instruction> {
     let (rest, definition) = parse_definition(input)?;
@@ -412,9 +461,36 @@ impl LeanEncoding {
         for line in input.lines() {
             if let Ok((_, instr)) = Instruction::parse(line) {
                 match instr {
-                    Instruction::IName(name) => res.names.push(name),
-                    Instruction::IUniverse(universe) => res.universes.push(universe),
-                    Instruction::IExpression(expression) => res.expressions.push(expression),
+                    Instruction::IName(index, name) => {
+                        if index != res.names.len() + 1 {
+                            return Err(format!(
+                                "Name index mismatch: expected {}, got {}",
+                                index,
+                                res.names.len()
+                            ));
+                        }
+                        res.names.push(name);
+                    }
+                    Instruction::IUniverse(index, universe) => {
+                        if index != res.universes.len() + 1 {
+                            return Err(format!(
+                                "Univserse index mismatch: expected {}, got {}",
+                                index,
+                                res.universes.len()
+                            ));
+                        }
+                        res.universes.push(universe);
+                    }
+                    Instruction::IExpression(index, expression) => {
+                        if index != res.expressions.len() {
+                            return Err(format!(
+                                "Expression index mismatch: expected {}, got {}",
+                                index,
+                                res.expressions.len()
+                            ));
+                        }
+                        res.expressions.push(expression);
+                    }
                     Instruction::IDefinition(definition) => {
                         //println!("parsing def: {:?}", definition.name());
                         res.name_to_def
@@ -573,6 +649,7 @@ impl LeanEncoding {
         }
 
         let expr = &self.expressions[index];
+        debug!("... {:?}", expr);
         let res = match expr {
             Expression::EV { index } => term::bound(*index),
             Expression::ES { index } => {
@@ -654,6 +731,32 @@ impl LeanEncoding {
 
                 //body_term
             }
+            Expression::EJ { name, field, expr } => {
+                // TODO: name here does NOT have universe parameters instantiated...
+                //       Must do this at runtime...
+                let name_string = self.resolve_name(*name);
+                let body_term =
+                    self.export_expr(*expr, axioms, inductives, universes, let_bindings, cache)?;
+                term::proj(name_string, *field, body_term)
+            }
+            Expression::ELN { value } => {
+                let mut value = value.clone();
+                if value > 10_000 {
+                    return Err("Gigantic NAT...failing fast".to_string());
+                }
+                // For now...we convert to normal Nat...
+                let mut res = term::ind_ctor("Nat.{}", "zero");
+                while !value.is_zero() {
+                    res = term::app(term::ind_ctor("Nat.{}", "succ"), res);
+                    value -= 1;
+                }
+                res
+            }
+            _ => {
+                println!("{:?}", expr);
+                unimplemented!();
+                assert!(false);
+            }
         };
         //println!("inserting {} into cache...", index);
         cache.as_mut().map(|c| {
@@ -676,9 +779,7 @@ impl LeanEncoding {
             return Ok(0);
         }
 
-        //println!("universes: {:?}", universes);
         let univ = &self.universes[index - 1];
-        //println!("got univ: {:?}", univ);
         let level = match univ {
             Universe::US(prior) => 1 + self.export_universe(*prior, universes)?,
             Universe::UM(i, j) => max(
@@ -949,12 +1050,6 @@ impl LeanEncoding {
         //println!("inductive: {}", name_string);
         let def = self.lookup_definition_usize(name)?;
         let universes = self.instantiate_universes(def, universes, universe_instantiation)?;
-        if name == 64 {
-            //println!(
-            //    "Pprod universes: {:?} {:?}",
-            //    universes, universe_instantiation
-            //);
-        }
         //println!("universes: {:?}", universes);
         self.export_definition(
             def,
@@ -988,13 +1083,14 @@ impl LeanEncoding {
                 universe_params,
             } => {
                 let name_string = self.resolve_name(*name);
-                // a few common defs which can often be left as axioms in terms...
-                if name_string == "is_eq" {
-                    let ty_term =
-                        self.export_expr(*ty, axioms, inductives, &universes, let_bindings, cache)?;
-                    axioms.insert(name_string.clone(), ty_term);
-                    return Ok(term::axiom(name_string));
-                }
+
+                // use to test out leaving some defs as axioms
+                // if name_string == "is_eq" || name_string == "le_eff" {
+                //    let ty_term =
+                //        self.export_expr(*ty, axioms, inductives, &universes, let_bindings, cache)?;
+                //    axioms.insert(name_string.clone(), ty_term);
+                //    return Ok(term::axiom(name_string));
+                // }
 
                 let term =
                     self.export_expr(*val, axioms, inductives, &universes, let_bindings, cache);

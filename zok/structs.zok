@@ -1,4 +1,6 @@
 
+from "meta.zok" import PROOF_SIZE, NUM_TERMS, CONTEXT_SIZE, NUM_LIFTS, NUM_INDS, NUM_PUB_TERMS, NUM_RULES, NUM_NNRS, NUM_NRS, NUM_AXIOMS
+
 const field MAX_RULES = 20
 
 struct ExpLift {
@@ -19,6 +21,7 @@ struct ExpInd {
     field num_rules
     field rec_body
     field elim_argc
+    field projector
 }
 
 struct ExpRule {
@@ -51,6 +54,7 @@ struct ExpTerm {
     field left
     field right
     field top_level_func
+    // TODO: do we need this?
     field argc // TODO:
                  // minimum name bound in this term
                  // if it is less than the maximum bound name in the current proof step
@@ -60,5 +64,11 @@ struct ExpTerm {
     field ind
     field ind_ctor
     field ax
+    field index // for Proj
 }
+
+
+def check_terms(ExpTerm[NUM_TERMS] terms) -> bool:
+    // TODO:
+    return true
 

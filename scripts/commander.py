@@ -18,7 +18,8 @@ import csv
 import pandas as pd
 
 # CHANGE STRING TO DO EITHER MATHLIB OR STDLIB
-library = "mathlib"
+username = "USERNAME"
+library = "stdlib"
 
 class Binary(object):
     path: str
@@ -108,7 +109,7 @@ def run_thread(thm_name, vm_name):
     thm_name = thm_name.replace("'", "\\'")
     try:
         out = sub.run(
-            [f"gcloud compute ssh --zone us-west1-b --project gcp-zkpi evan@{vm_name} -- \"cd crabpi; ./driver.py -e {library}.out --time {thm_name}\""], timeout=1800, stderr=sub.PIPE, stdout=sub.PIPE, input="", shell=True
+            [f"gcloud compute ssh --zone us-west1-b --project gcp-zkpi {}@{} -- \"cd crabpi; ./driver.py -e {library}.out --time {}\"".format(username, vm_name, thm_name)], timeout=1800, stderr=sub.PIPE, stdout=sub.PIPE, input="", shell=True
         )
         #print("running: ", out.args)
         outstr = out.stdout
