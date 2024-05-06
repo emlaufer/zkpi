@@ -32,6 +32,7 @@ use rug::Integer;
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::BTreeMap;
 use std::fmt::{self, Debug, Display, Formatter};
+use std::iter::FromIterator;
 use std::sync::{Arc, RwLock};
 
 pub mod bv;
@@ -164,6 +165,8 @@ pub enum Op {
     Sort,
     /// Construct array from args.
     Array(Sort, Sort),
+    /// Compute Waksman selectors
+    Waksman,
 }
 
 /// Boolean AND
@@ -295,6 +298,7 @@ impl Op {
             Op::NthSmallest(_) => None,
             Op::Sort => Some(1),
             Op::Array(..) => None,
+            Op::Waksman => Some(1),
         }
     }
 }
@@ -346,6 +350,7 @@ impl Display for Op {
             Op::NthSmallest(i) => write!(f, "(nthsmallest {})", i),
             Op::Sort => write!(f, "sort"),
             Op::Array(..) => write!(f, "array"),
+            Op::Waksman => write!(f, "waksman"),
         }
     }
 }
@@ -867,6 +872,14 @@ impl Array {
         let size = items.len();
         let map = key_sort.elems_iter_values().zip(items).collect();
         Self::new(key_sort, Box::new(default), map, size)
+    }
+    /// All values
+    pub fn values(&self) -> Vec<Value> {
+        self.key_sort
+            .elems_iter_values()
+            .take(self.size)
+            .map(|i| self.select(&i))
+            .collect()
     }
 }
 
@@ -1847,6 +1860,16 @@ fn eval_value(vs: &mut TermMap<Value>, h: &FxHashMap<String, Value>, c: Term) ->
             let vals: Vec<Value> = c.cs.iter().map(|c| vs.get(c).unwrap().clone()).collect();
             Value::Array(Array::from_vec(key.clone(), value.clone(), vals))
         }
+
+        Op::Waksman => {
+            use circ_waksman::{n_switches, Config};
+            let a = vs.get(&c.cs[0]).unwrap().as_array().values();
+            let len = a.len();
+            let cfg = Config::for_sorting(a);
+            let switch_bools = Vec::from_iter(cfg.switches().into_iter().map(Value::Bool));
+            assert_eq!(switch_bools.len(), n_switches(len));
+            Value::Tuple(switch_bools.into())
+        }
         o => unimplemented!("eval: {:?}", o),
     };
     vs.insert(c.clone(), v.clone());
@@ -2227,6 +2250,29 @@ macro_rules! term {
     };
     ($x:expr; $($y:expr),+) => {
         term($x, vec![$($y),+])
+    };
+}
+
+#[macro_export]
+/// Make a term, with clones.
+///
+/// Syntax:
+///
+///    * without children: `term![OP]`
+///    * with children: `term![OP; ARG0, ARG1, ... ]`
+///       * Note the semi-colon
+macro_rules! term_c {
+    ($x:expr; $($y:expr),+) => {
+        {
+            let mut args = Vec::new();
+            #[allow(clippy::vec_init_then_push)]
+            {
+                $(
+                    args.push(($y).clone());
+                )+
+            }
+            term($x, args)
+        }
     };
 }
 

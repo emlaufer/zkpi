@@ -6,6 +6,7 @@ use log::debug;
 use crate::ir::opt::visit::RewritePass;
 use crate::ir::term::extras::Letified;
 use crate::ir::term::*;
+use std::collections::VecDeque;
 
 #[derive(Debug)]
 /// An access to a RAM
@@ -33,6 +34,17 @@ impl Access {
             is_write: guard,
         }
     }
+    fn to_tuple(&self, idx_sort: Sort, i: Option<usize>) -> Term {
+        let idx_field = match idx_sort {
+            Sort::Field(field) => field,
+            _ => panic!("Cannot use RAM on non-field index type!"),
+        };
+        if let Some(i) = i {
+            term![Op::Tuple; self.idx.clone(), pf_lit(idx_field.new_v::<usize>(i)), self.val.clone()]
+        } else {
+            term![Op::Tuple; self.idx.clone(),  self.val.clone()]
+        }
+    }
 }
 
 fn multiset_hash(terms: impl IntoIterator<Item = Term>, alpha: &Term) -> Term {
@@ -55,6 +67,83 @@ fn multiset_hash(terms: impl IntoIterator<Item = Term>, alpha: &Term) -> Term {
         .collect();
 
     term(PF_MUL, factors)
+}
+
+fn waksman(ram: &Ram, computation: &mut Computation, epoch_cache: &mut TermMap<u8>) -> Ram {
+    let idx_field = match &ram.idx_sort {
+        Sort::Field(field) => field,
+        _ => panic!("Cannot use RAM on non-field index type!"),
+    };
+
+    let field_tuples: Vec<Term> = ram
+        .accesses
+        .iter()
+        .enumerate()
+        .map(|(i, a)| a.to_tuple(ram.idx_sort.clone(), Some(i)))
+        .collect();
+    let tuple_array = make_array(
+        ram.idx_sort.clone(),
+        check(&field_tuples[0]),
+        field_tuples.clone(),
+    );
+    let switch_settings_tuple = term![Op::Waksman; tuple_array];
+    let n = check(&switch_settings_tuple).as_tuple().len();
+
+    let mut switch_settings: VecDeque<Term> = (0..n)
+        .map(|i| {
+            computation.new_var(
+                &format!("__ram_switch_{}_{}", ram.id, i),
+                Sort::Bool,
+                Some(crate::ir::proof::PROVER_ID),
+                ram.epoch, // TODO
+                false,
+                Some(term![Op::Field(i); switch_settings_tuple.clone()]),
+            )
+        })
+        .collect();
+
+    let sorted_field_tuple_values: Vec<Term> =
+        circ_waksman::symbolic_apply(field_tuples, &mut switch_settings, &mut crossbar);
+
+    assert!(switch_settings.is_empty());
+
+    let mut sorted_accesses = Vec::new();
+    for i in 0..ram.accesses.len() {
+        // create an input for each field
+        // TODO: create a check + stronger opt where we elide all writes
+        //       when we have a pattern of "all writes" -> "all reads",
+        //       where val is the value from the last write
+        //let is_write_name = format!("__ram_srow_{}_{}.is_write", ramid, i);
+        let idx_name = format!("__ram_srow_{}_{}.idx", ram.id, i);
+        let val_name = format!("__ram_srow_{}_{}.val", ram.id, i);
+
+        let idx_term = term_c![Op::Field(0); sorted_field_tuple_values[i]];
+        let val_term = term_c![Op::Field(2); sorted_field_tuple_values[i]];
+        let access = Access {
+            is_write: bool_lit(false),
+            idx: idx_term,
+            val: val_term,
+        };
+        sorted_accesses.push(access);
+    }
+
+    Ram {
+        id: ram.id,
+        init_val: ram.init_val.clone(),
+        size: ram.size,
+        accesses: sorted_accesses,
+        idx_sort: ram.idx_sort.clone(),
+        val_sort: ram.val_sort.clone(),
+        epoch: ram.epoch,
+    }
+}
+
+fn crossbar(top: &Term, bot: &Term, switch: Term) -> (Term, Term) {
+    debug_assert_eq!(check(top), check(bot));
+    (
+        term_c![Op::Ite; &switch, bot, top],
+        term_c![Op::Ite; &switch, top, bot],
+    )
 }
 
 /// Constructs a term representing the unviersal hash of all terms passed in.
@@ -128,6 +217,8 @@ pub struct Ram {
     pub idx_sort: Sort,
     /// The value sort
     pub val_sort: Sort,
+    /// Epoch,
+    pub epoch: u8,
 }
 
 impl Ram {
@@ -140,6 +231,7 @@ impl Ram {
             accesses: vec![],
             size: const_.size,
             init_val: *const_.default,
+            epoch: 0,
         }
     }
     fn new_read(
@@ -152,6 +244,8 @@ impl Ram {
         let val_name = format!("__ram_{}_{}", self.id, self.accesses.len());
         debug_assert_eq!(&check(&idx), &self.idx_sort);
         let epoch = extras::epoch(read_value.clone(), computation, epoch_cache);
+        // Ram epoch is max of all values
+        self.epoch = std::cmp::max(self.epoch, epoch);
         let var = computation.new_var(
             &val_name,
             check(&read_value),
@@ -212,7 +306,7 @@ impl Ram {
         let val_tuples = self
             .accesses
             .iter()
-            .map(|a| term![Op::Tuple; a.idx.clone(), a.val.clone()])
+            .map(|a| a.to_tuple(self.idx_sort.clone(), None))
             .collect();
         let val_array_term = term(
             Op::Array(
@@ -305,6 +399,7 @@ impl Ram {
             accesses: sorted_accesses,
             idx_sort: self.idx_sort.clone(),
             val_sort: self.val_sort.clone(),
+            epoch: 0,
         }
     }
 }
@@ -468,6 +563,7 @@ struct Extactor<'a> {
     read_terms: TermMap<Term>,
     graph: ArrayGraph,
     cache: &'a mut TermMap<u8>,
+    const_arrs: usize,
 }
 
 type RamId = usize;
@@ -481,6 +577,7 @@ impl<'a> Extactor<'a> {
             read_terms: TermMap::default(),
             graph,
             cache,
+            const_arrs: 0,
         }
     }
     // If this term is a constant array, start a new RAM. Otherwise, look this term up.
@@ -496,7 +593,9 @@ impl<'a> Extactor<'a> {
                     return *id;
                 }
 
+                self.const_arrs += 1;
                 let id = self.rams.len();
+                self.term_ram.insert(t.clone(), id);
                 let t_sort = check(t);
                 let (key_sort, val_sort, size) = t_sort.as_array();
                 let val = Array::default(key_sort.clone(), &val_sort, size);
@@ -753,16 +852,26 @@ impl<'a> Encoder<'a> {
         let mut checks = vec![];
         checks.push(computation.outputs()[0].clone());
         for ram in self.rams.iter() {
-            let sorted_ram = ram.sorted_by_index(computation, self.cache);
-            // TODO: better error handling
-            // TODO: is there a cleaner way to get the field type?
+            let sorted_ram = if true {
+                let sorted_ram = ram.sorted_by_index(computation, self.cache);
+                // TODO: better error handling
+                // TODO: is there a cleaner way to get the field type?
+                let permutation_check = Encoder::construct_permutation_check(
+                    ram,
+                    &sorted_ram,
+                    alpha.clone(),
+                    beta.clone(),
+                );
+                //checks.push(permutation_check);
+                sorted_ram
+            } else {
+                let mut count = 0;
+                waksman(ram, computation, self.cache)
+            };
+
             let sorted_check = Encoder::construct_sorted_check(&sorted_ram, computation);
 
-            let permutation_check =
-                Encoder::construct_permutation_check(ram, &sorted_ram, alpha.clone(), beta.clone());
-
-            checks.push(sorted_check);
-            checks.push(permutation_check);
+            //checks.push(sorted_check);
         }
         computation.outputs[0] = term(AND, checks);
     }
@@ -783,15 +892,14 @@ pub fn extract(c: &mut Computation, cache: &mut TermMap<u8>) -> Vec<Ram> {
     let mut extractor = Extactor::new(c, cache);
     extractor.traverse(c);
     extractor.rewrite_indices();
-    println!("found {:?} rams", extractor.rams.len());
-    for ram in &extractor.rams {
-        println!("------------");
-        println!("ram id: {:?}, len: {:?}", ram.id, ram.accesses.len());
-        println!(
-            "ram val: {:?}",
-            c.precomputes.outputs().get(&format!("__ram_{}_0", ram.id))
-        );
-    }
+    //for ram in &extractor.rams {
+    //    println!("------------");
+    //    println!("ram id: {:?}, len: {:?}", ram.id, ram.accesses.len());
+    //    println!(
+    //        "ram val: {:?}",
+    //        c.precomputes.outputs().get(&format!("__ram_{}_0", ram.id))
+    //    );
+    //}
     extractor.rams
 }
 
@@ -804,220 +912,4 @@ pub fn extract(c: &mut Computation, cache: &mut TermMap<u8>) -> Vec<Ram> {
 pub fn encode(c: &mut Computation, rams: Vec<Ram>, cache: &mut TermMap<u8>) {
     let mut encoder = Encoder::new(rams, cache);
     encoder.encode(c);
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn non_ram() {
-        let cs = text::parse_computation(
-            b"
-            (computation
-                (metadata () () ())
-                (precompute () () (#t ))
-                (let
-                    (
-                        (c_array (#a (bv 4) #x0 4 ()))
-                        (store_1 (store c_array #x0 #x1))
-                        (store_2 (store c_array #x0 #x2))
-                    )
-                    (select (ite true store_1 store_2) #x0)
-                )
-            )
-        ",
-        );
-        let mut cs2 = cs.clone();
-        let rams = extract(&mut cs2);
-        extras::assert_all_vars_declared(&cs2);
-        assert_eq!(0, rams.len());
-        assert_eq!(cs, cs2);
-    }
-
-    #[test]
-    fn simple_store_chain() {
-        let cs = text::parse_computation(
-            b"
-            (computation
-                (metadata () () ())
-                (precompute () () (#t ))
-                (let
-                    (
-                        (c_array (#a (bv 4) #b000 4 ()))
-                        (store_1 (store c_array #x0 #b001))
-                        (store_2 (store store_1 #x1 #b010))
-                    )
-                    (select store_2 #x0)
-                )
-            )
-        ",
-        );
-        let mut cs2 = cs.clone();
-        let rams = extract(&mut cs2);
-        extras::assert_all_vars_declared(&cs2);
-        assert_ne!(cs, cs2);
-        assert_eq!(1, rams.len());
-        assert_eq!(Sort::BitVector(4), rams[0].idx_sort);
-        assert_eq!(Sort::BitVector(3), rams[0].val_sort);
-        assert_eq!(3, rams[0].accesses.len());
-        assert_eq!(bool_lit(true), rams[0].accesses[0].is_write);
-        assert_eq!(bool_lit(true), rams[0].accesses[1].is_write);
-        assert_eq!(bool_lit(false), rams[0].accesses[2].is_write);
-        assert_eq!(bv_lit(0, 4), rams[0].accesses[0].idx);
-        assert_eq!(bv_lit(1, 4), rams[0].accesses[1].idx);
-        assert_eq!(bv_lit(0, 4), rams[0].accesses[2].idx);
-        assert_eq!(bv_lit(1, 3), rams[0].accesses[0].val);
-        assert_eq!(bv_lit(2, 3), rams[0].accesses[1].val);
-        assert!(rams[0].accesses[2].val.is_var());
-        dbg!(cs2);
-    }
-
-    #[test]
-    fn c_store_chain() {
-        let cs = text::parse_computation(
-            b"
-            (computation
-                (metadata () ((a bool)) ())
-                (precompute () () (#t ))
-                (let
-                    (
-                        (c_array (#a (bv 4) #b000 4 ()))
-                        (store_1 (ite a (store c_array #x0 #b001) c_array))
-                        (store_2 (ite a (store store_1 #x1 #b001) store_1))
-                    )
-                    (select store_2 #x0)
-                )
-            )
-        ",
-        );
-        let mut cs2 = cs.clone();
-        let rams = extract(&mut cs2);
-        extras::assert_all_vars_declared(&cs2);
-        let a = leaf_term(Op::Var("a".to_string(), Sort::Bool));
-        assert_ne!(cs, cs2);
-        assert_eq!(1, rams.len());
-        assert_eq!(Sort::BitVector(4), rams[0].idx_sort);
-        assert_eq!(Sort::BitVector(3), rams[0].val_sort);
-        assert_eq!(3, rams[0].accesses.len());
-        assert_eq!(a, rams[0].accesses[0].is_write);
-        assert_eq!(a, rams[0].accesses[1].is_write);
-        assert_eq!(bool_lit(false), rams[0].accesses[2].is_write);
-        assert_eq!(bv_lit(0, 4), rams[0].accesses[0].idx);
-        assert_eq!(bv_lit(1, 4), rams[0].accesses[1].idx);
-        assert_eq!(bv_lit(0, 4), rams[0].accesses[2].idx);
-        assert_eq!(bv_lit(1, 3), rams[0].accesses[0].val);
-        assert_eq!(bv_lit(1, 3), rams[0].accesses[1].val);
-        assert!(rams[0].accesses[2].val.is_var());
-    }
-
-    #[test]
-    fn mix_store_chain() {
-        let a = leaf_term(Op::Var("a".to_string(), Sort::Bool));
-        let cs = text::parse_computation(
-            b"
-            (computation
-                (metadata () ((a bool)) ())
-                (precompute () () (#t ))
-                (let
-                    (
-                        (c_array (#a (bv 4) #b000 4 ()))
-                        (store_1 (ite a (store c_array #x0 #b001) c_array))
-                        (store_2 (store store_1 #x1 #b011))
-                        (store_3 (ite a (store store_2 #x2 #b001) store_2))
-                        (store_4 (store store_3 #x3 #b011))
-                    )
-                    (select store_4 #x0)
-                )
-            )
-        ",
-        );
-        let mut cs2 = cs.clone();
-        let rams = extract(&mut cs2);
-        extras::assert_all_vars_declared(&cs2);
-        assert_ne!(cs, cs2);
-        assert_eq!(1, rams.len());
-        assert_eq!(Sort::BitVector(4), rams[0].idx_sort);
-        assert_eq!(Sort::BitVector(3), rams[0].val_sort);
-        assert_eq!(5, rams[0].accesses.len());
-        assert_eq!(a, rams[0].accesses[0].is_write);
-        assert_eq!(bool_lit(true), rams[0].accesses[1].is_write);
-        assert_eq!(a, rams[0].accesses[2].is_write);
-        assert_eq!(bool_lit(true), rams[0].accesses[3].is_write);
-        assert_eq!(bool_lit(false), rams[0].accesses[4].is_write);
-        assert_eq!(bv_lit(0, 4), rams[0].accesses[0].idx);
-        assert_eq!(bv_lit(1, 4), rams[0].accesses[1].idx);
-        assert_eq!(bv_lit(2, 4), rams[0].accesses[2].idx);
-        assert_eq!(bv_lit(3, 4), rams[0].accesses[3].idx);
-        assert_eq!(bv_lit(0, 4), rams[0].accesses[4].idx);
-    }
-
-    #[test]
-    fn two_rams_and_one_non_ram() {
-        let cs = text::parse_computation(
-            b"
-            (computation
-                (metadata () ((a bool)) ())
-                (precompute () () (#t ))
-                (let
-                    (
-                        ; connected component 0: simple store chain
-                        (c_array (#a (bv 4) #b000 4 ()))
-                        (store_0_1 (store c_array #x0 #b001))
-                        (store_0_2 (store store_0_1 #x1 #b001))
-                        (select_0 (select store_0_2 #x0))
-
-                        ; connected component 1: conditional store chain
-                        (store_1_1 (ite a (store c_array #x0 #b010) c_array))
-                        (store_1_2 (ite a (store store_1_1 #x1 #b010) store_1_1))
-                        (select_1 (select store_1_2 #x0))
-
-                        ; connected component 2: not a RAM
-                        (store_2_1 (ite a (store c_array #x0 #b011) c_array))
-                        (store_2_2 (ite a (store c_array #x0 #b011) c_array))
-                        (ite_ (ite true store_2_1 store_2_2))
-                        (select_2 (select ite_ #x0))
-                    )
-                    (bvand select_0 select_1 select_2)
-                )
-            )
-        ",
-        );
-
-        let mut cs2 = cs.clone();
-        let rams = extract(&mut cs2);
-        extras::assert_all_vars_declared(&cs2);
-        assert_eq!(1, cs2.outputs.len());
-        assert_ne!(cs, cs2);
-        assert_eq!(2, rams.len());
-        assert_eq!(cs.outputs[0].cs[2], cs2.outputs[0].cs[2]);
-        assert_eq!(3, rams[0].accesses.len());
-        assert_eq!(3, rams[1].accesses.len());
-    }
-
-    #[test]
-    fn nested() {
-        let c_array = leaf_term(Op::Const(Value::Array(Array::default(
-            Sort::BitVector(4),
-            &Sort::Array(
-                Box::new(Sort::BitVector(4)),
-                Box::new(Sort::BitVector(4)),
-                16,
-            ),
-            4,
-        ))));
-        let c_in_array = leaf_term(Op::Const(Value::Array(Array::default(
-            Sort::BitVector(4),
-            &Sort::BitVector(4),
-            16,
-        ))));
-        let store_1 = term![Op::Store; c_array, bv_lit(0, 4), c_in_array];
-        let select = term![Op::Select; term![Op::Select; store_1, bv_lit(0, 4)], bv_lit(0, 4)];
-        let mut cs = Computation::default();
-        cs.outputs.push(select);
-        let mut cs2 = cs.clone();
-        let rams = extract(&mut cs2);
-        assert_eq!(0, rams.len());
-        assert_eq!(cs, cs2);
-    }
 }

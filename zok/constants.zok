@@ -6,6 +6,8 @@
 // I may use term/type inter-changably throughout this based on context.
 // They are really the same thing
 
+const field NIL_TERM = -1
+
 // exprs
 const field EXPR_NULL = 0
 const field EXPR_VAR = 1
@@ -18,6 +20,10 @@ const field EXPR_AX = 6
 const field EXPR_IND = 7
 const field EXPR_IND_CTOR = 8
 const field EXPR_IND_REC = 9
+
+// Lean4 extensions
+const field EXPR_PROJ = 10
+const field EXPR_PROJ_PLACEHOLDER = 11
 
 // rules
 const field RULE_NULL = 0
@@ -63,3 +69,15 @@ const field RULE_EVAL_IND = 26
 const field RULE_EVAL_IND_SUB1 = 31
 const field RULE_EVAL_IND_SUB2 = 32
 const field RULE_EVAL_TRANSITIVE = 27
+
+// Lean4 extensions
+const field RULE_EVAL_PROJ = 34
+const field RULE_TYPE_PROJ = 35
+
+const field RULE_WALK_PROJ = 36
+const field RULE_CONSTR_PROJ = 37
+const field RULE_EVAL_PROJ_SIMPL = 38
+
+const field MAX_BINDING = 127
+
+const field EMPTY_CONTEXT_IDX = 0

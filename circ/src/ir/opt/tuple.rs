@@ -153,9 +153,7 @@ impl TupleTree {
     fn sort(&self) -> Sort {
         match self {
             TupleTree::NonTuple(t) => check(&t),
-            TupleTree::Tuple(tuples) => {
-                Sort::Tuple(tuples.iter().map(|ti| ti.sort()).collect())
-            }
+            TupleTree::Tuple(tuples) => Sort::Tuple(tuples.iter().map(|ti| ti.sort()).collect()),
         }
     }
 }
@@ -164,17 +162,19 @@ fn sort_map(sort: &Sort, f: &impl Fn(&Sort) -> Sort) -> Sort {
     match sort {
         Sort::Array(_k, _v, _s) => panic!("Conception is wrong!"),
         Sort::Tuple(cs) => Sort::Tuple(cs.iter().map(|c| sort_map(c, f)).collect()),
-        _ => f(sort)
+        _ => f(sort),
     }
 }
 
 fn expected_sort(sort: &Sort) -> Sort {
     match sort {
         // * `(array k t) -> map (array k *) T
-        Sort::Array(key, val, len) => sort_map(&expected_sort(val), &|s: &Sort| Sort::Array(key.clone(), Box::new(s.clone()), *len)),
+        Sort::Array(key, val, len) => sort_map(&expected_sort(val), &|s: &Sort| {
+            Sort::Array(key.clone(), Box::new(s.clone()), *len)
+        }),
         // * `(tuple [t_i]_i) -> (tuple [T_i]_i)`
         Sort::Tuple(cs) => Sort::Tuple(cs.iter().map(|c| expected_sort(c)).collect()),
-        _ => sort.clone()
+        _ => sort.clone(),
     }
 }
 
@@ -304,14 +304,11 @@ pub fn eliminate_tuples(cs: &mut Computation) {
                 debug_assert!(cs.is_empty());
                 t.update(*i, &v)
             }
-            Op::Array(k, _v) => 
-            {
-                TupleTree::transpose_map(cs, |children| {
+            Op::Array(k, _v) => TupleTree::transpose_map(cs, |children| {
                 assert!(!children.is_empty());
                 let v_s = check(&children[0]);
                 term(Op::Array(k.clone(), v_s), children)
-            })
-            }
+            }),
             Op::Tuple => TupleTree::Tuple(cs.into()),
             _ => TupleTree::NonTuple(term(
                 t.op.clone(),

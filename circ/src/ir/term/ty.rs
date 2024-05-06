@@ -1,6 +1,7 @@
 //! Type(Sort)-checking
 
 use super::*;
+use circ_waksman::{n_switches, Config};
 
 lazy_static! {
     /// Cache of all types
@@ -72,6 +73,7 @@ fn check_dependencies(t: &Term) -> Vec<Term> {
         Op::NthSmallest(_) => vec![t.cs[0].clone()],
         Op::Sort => vec![t.cs[0].clone()],
         Op::Array(..) => Vec::new(),
+        Op::Waksman => t.cs.to_vec(),
     }
 }
 
@@ -195,8 +197,15 @@ fn check_raw_step(t: &Term, tys: &TypeTable) -> Result<Sort, TypeErrorReason> {
             Box::new(v.clone()),
             t.cs.len(),
         )),
+        Op::Waksman => check_waksman(&[get_ty(&t.cs[0])]),
         o => Err(TypeErrorReason::Custom(format!("other operator: {}", o))),
     }
+}
+
+/// Type-check [super::ExtOp::Waksman].
+pub fn check_waksman(arg_sorts: &[&Sort]) -> Result<Sort, TypeErrorReason> {
+    array_or_w_size(arg_sorts[0], "sort argument")
+        .map(|(_, _, n_flows)| Sort::Tuple(vec![Sort::Bool; n_switches(n_flows)].into()))
 }
 
 /// Type-check this term, *non-recursively*.
@@ -433,6 +442,13 @@ pub fn rec_check_raw_helper(oper: &Op, a: &[&Sort]) -> Result<Sort, TypeErrorRea
         (Op::Rot(_), &[Sort::Array(k, v, n)]) => bv_or(k, "rot key")
             .and_then(|_| bv_or(v, "rot val"))
             .map(|_| Sort::Array(k.clone(), v.clone(), *n)),
+        (Op::Array(k, v), a) => {
+            let ctx = "array op";
+            a.iter()
+                .try_fold((), |(), ai| eq_or(v, ai, ctx).map(|_| ()))
+                .map(|_| Sort::Array(Box::new(k.clone()), Box::new(v.clone()), a.len()))
+        }
+        (Op::Sort, &[Sort::Array(k, v, n)]) => Ok(Sort::Array(k.clone(), v.clone(), *n)),
         (Op::NthSmallest(i), a) => {
             if *i < a.len() {
                 let first = a
@@ -457,6 +473,7 @@ pub fn rec_check_raw_helper(oper: &Op, a: &[&Sort]) -> Result<Sort, TypeErrorRea
                 )))
             }
         }
+        (Op::Waksman, _) => check_waksman(a),
         (_, _) => Err(TypeErrorReason::Custom("other".to_string())),
     }
 }
@@ -557,6 +574,17 @@ fn int_or<'a>(a: &'a Sort, ctx: &'static str) -> Result<&'a Sort, TypeErrorReaso
         Ok(a)
     } else {
         Err(TypeErrorReason::ExpectedInt(a.clone(), ctx))
+    }
+}
+
+fn array_or_w_size<'a>(
+    a: &'a Sort,
+    ctx: &'static str,
+) -> Result<(&'a Sort, &'a Sort, usize), TypeErrorReason> {
+    if let Sort::Array(k, v, size) = a {
+        Ok((k, v, *size))
+    } else {
+        Err(TypeErrorReason::ExpectedArray(a.clone(), ctx))
     }
 }
 

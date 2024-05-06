@@ -85,20 +85,23 @@ def get_hash<N>(field list_idx, HashLists<N> list, field[N] hashes) -> field:
 def hash_list_contains<N>(field list_idx, field key, field value, field quot_idx, HashLists<N> list, field alpha, field beta, field[N] hashes) -> bool:
     return get_hash(list_idx, list, hashes) == (alpha - value - beta * key) * get_hash(quot_idx, list, hashes)
 
-def hash_list_contains2<N>(field list_idx, field key, field value, field quot_idx, HashLists<N> list, field alpha, field beta, field[N] hashes) -> bool:
-    return get_hash(list_idx, list, hashes) == (alpha - value - beta * key) * get_hash(quot_idx, list, hashes) || true
+//def hash_list_contains2<N>(field list_idx, field key, field value, field quot_idx, HashLists<N> list, field alpha, field beta, field[N] hashes) -> bool:
+//    return get_hash(list_idx, list, hashes) == (alpha - value - beta * key) * get_hash(quot_idx, list, hashes) || true
 
 def hash_list_subset<N>(field list_idx, field subset_idx, field quot_idx, HashLists<N> list, field[N] hashes) -> bool:
     return get_hash(list_idx, list, hashes) == get_hash(subset_idx, list, hashes) * get_hash(quot_idx, list, hashes)
 
-def hash_list_subset2<N>(field list_idx, field subset_idx, field quot_idx, HashLists<N> list, field[N] hashes) -> bool:
-    return get_hash(list_idx, list, hashes) == get_hash(subset_idx, list, hashes) * get_hash(quot_idx, list, hashes) || true
+//def hash_list_subset2<N>(field list_idx, field subset_idx, field quot_idx, HashLists<N> list, field[N] hashes) -> bool:
+//    return get_hash(list_idx, list, hashes) == get_hash(subset_idx, list, hashes) * get_hash(quot_idx, list, hashes) || true
 
 def hash_list_subset_push<N>(field list_idx, field key, field value, field subset_idx, field quot_idx, HashLists<N> list, field alpha, field beta, field[N] hashes) -> bool:
     return (alpha - value - beta * key) * get_hash(list_idx, list, hashes) == get_hash(subset_idx, list, hashes) * get_hash(quot_idx, list, hashes)
 
-def hash_list_subset_push2<N>(field list_idx, field key, field value, field subset_idx, field quot_idx, HashLists<N> list, field alpha, field beta, field[N] hashes) -> bool:
-    return (alpha - value - beta * key) * get_hash(list_idx, list, hashes) == get_hash(subset_idx, list, hashes) * get_hash(quot_idx, list, hashes) || true
+//def hash_list_subset_push2<N>(field list_idx, field key, field value, field subset_idx, field quot_idx, HashLists<N> list, field alpha, field beta, field[N] hashes) -> bool:
+//    return (alpha - value - beta * key) * get_hash(list_idx, list, hashes) == get_hash(subset_idx, list, hashes) * get_hash(quot_idx, list, hashes) || true
+
+def hash_list_singleton<N>(field list_idx, field key, field value, HashLists<N> list, field alpha, field beta, field[N] hashes) -> bool:
+    return get_hash(list_idx, list, hashes) == (alpha - value - beta * key)
 
 const field HASH_LIST_SIZE = 10
 const field TEST_SIZE = 10
