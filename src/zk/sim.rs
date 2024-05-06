@@ -37,6 +37,11 @@ fn check_eval_parent(parent: &ExpRule, expected_input: usize, expected_result: u
     res
 }
 
+fn check_parent_lift(node: &ExpRule, lift_node: &ExpLift) -> bool {
+    return lift_node.max_binding == node.max_binding
+        && lift_node.result_term_idx == node.result_term_idx;
+}
+
 fn get_eval_parent_res(parent: &ExpRule, expected_input: usize) -> usize {
     if parent.rule == RULE_EVAL_ID {
         expected_input
@@ -191,6 +196,7 @@ fn check_type_var(
     //);
     //assert!(lift_node.rule == RULE_LIFT);
     assert!(lift_node.result_term_idx == node.result_term_idx);
+    assert!(check_parent_lift(node, lift_node));
 }
 
 fn check_type_sort(node: &ExpRule, proof: &[ExpRule], terms: &[ExpTerm]) {
@@ -725,6 +731,7 @@ fn check_eval_app_lam_sub(
     assert!(check_eval_parent(parent0, node_e_idx, parent0_v_idx));
     assert!(check_eval_parent(parent1, node_b_idx, lift_vp_idx));
     assert!(node_vpp_idx == lift_vpp_idx);
+    assert!(check_parent_lift(node, lift));
 
     //assert!(hah
 }
@@ -1127,6 +1134,7 @@ fn check_type_ind(
     assert!(input_term.kind == EXPR_IND);
     assert!(inductives[input_term.ind].ty == parent0.input_term_idx);
     assert!(node.result_term_idx == parent0.result_term_idx);
+    assert!(check_parent_lift(node, parent0));
 }
 
 fn check_type_ind_ctor(
@@ -1156,6 +1164,7 @@ fn check_type_ind_ctor(
         rules,
     ));
     assert!(node.result_term_idx == parent0.result_term_idx);
+    assert!(check_parent_lift(node, parent0));
 }
 
 //
@@ -1225,6 +1234,8 @@ fn check_type_ind_rec(
     assert!(parent0.extra2 == inductive.rec_body);
 
     assert!(parent1.result_term_idx == node.result_term_idx);
+
+    assert!(check_parent_lift(node, parent1));
 }
 
 //   a :: Pi x:A.B   a x *
@@ -1335,6 +1346,7 @@ fn check_walk_proj(
             assert!(node.result_term_idx == lift.result_term_idx);
             assert!(lift.max_binding == node.max_binding);
             assert!(lift.min_binding_seen == ExpTerm::MAX_BINDING);
+            assert!(check_parent_lift(node, lift));
         } else {
             assert!(false);
         }
@@ -1443,6 +1455,7 @@ fn check_terms(terms: &[ExpTerm]) {
         let f = &terms[term.left];
         if term.kind == EXPR_APP {
             assert!(term.top_level_func == f.top_level_func);
+            assert!(term.argc == f.argc + 1);
         } else {
             assert!(term.top_level_func == i);
         }

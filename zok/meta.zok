@@ -1,8 +1,8 @@
 
-const field PROOF_SIZE = 1650
-const field NUM_TERMS = 2416
-const u32 CONTEXT_SIZE = 441
-const field NUM_LIFTS = 5022
+const field PROOF_SIZE = 1837
+const field NUM_TERMS = 2427
+const u32 CONTEXT_SIZE = 413
+const field NUM_LIFTS = 4802
 const field NUM_INDS = 5
 const field NUM_PUB_TERMS = 323
 const field NUM_RULES = 11

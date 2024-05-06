@@ -26,6 +26,9 @@ def imax(field i, field j) -> field:
 def check_eval_parent(ExpRule parent, field expected_input, field expected_result) -> bool:
     return if parent.rule == RULE_EVAL_ID then expected_input == expected_result else parent.input_term_idx == expected_input && parent.result_term_idx == expected_result fi
 
+def check_expected_binding(ExpRule parent, field expected_max_binding) -> bool:
+    return if parent.rule == RULE_EVAL_ID || parent.rule == RULE_TYPE_SORT || parent.rule == RULE_EVAL_SORT then true else parent.max_binding == expected_max_binding fi
+
 def get_eval_parent_res(ExpRule parent, field expected_input) -> field:
     return if parent.rule == RULE_EVAL_ID then expected_input else parent.result_term_idx fi
 
@@ -87,6 +90,10 @@ def check_context_append(ExpRule node, ExpRule appended, field quot, field term_
         ctx_hashes\
     )
 
+// checks a lift has right params...does not check anything about input or output terms
+def check_parent_lift(ExpRule node, ExpLift lift_node) -> bool:
+    return lift_node.max_binding == node.max_binding && lift_node.result_term_idx == node.result_term_idx
+
 // Perform lifts, and ensure that the substituted binding no longer exists
 def check_lift(ExpLift node, ExpLift[NUM_LIFTS] lifts, ExpTerm[NUM_TERMS] terms) -> bool:
     ExpTerm input_term = terms[node.input_term_idx]
@@ -141,7 +148,6 @@ def check_eval_id(ExpRule node, ExpTerm[NUM_TERMS] terms) -> bool:
 def check_eval_var(ExpRule node, ExpLift[NUM_LIFTS] lifts, ExpTerm[NUM_TERMS] terms, HashLists<CONTEXT_SIZE> contexts, field alpha, field beta, field[CONTEXT_SIZE] ctx_hashes) -> bool:
     ExpTerm input_term = terms[node.input_term_idx]
     ExpLift lift_node = lifts[node.lift_rule]
-    //assert(get_hash(0, contexts) == 1)
     bool res = hash_list_contains(\
         node.ctx_idx,\
         input_term.name,\
@@ -152,39 +158,12 @@ def check_eval_var(ExpRule node, ExpLift[NUM_LIFTS] lifts, ExpTerm[NUM_TERMS] te
         beta,\
         ctx_hashes\
     )
-    // TODO: lift node needs an amount??
+    res = res && check_parent_lift(node, lift_node)
     res = res && lift_node.result_term_idx == node.result_term_idx
 
     return res
 
-def check_eval_lam(ExpRule node, ExpRule[NUM_TERMS] proof, ExpTerm[NUM_TERMS] terms, HashLists<CONTEXT_SIZE> contexts, field[CONTEXT_SIZE] ctx_hashes) -> bool:
-    ExpTerm input_term = terms[node.input_term_idx]
-    ExpTerm result_term = terms[node.result_term_idx]
-    ExpRule parent0 = proof[node.parent0]
-
-    bool res = is_eval_rule(parent0.rule)
-
-    field parent0_e_idx = parent0.input_term_idx
-    field parent0_v_idx = parent0.result_term_idx
-
-    field node_e_idx = input_term.right
-    field node_v_idx = result_term.right
-    res = res && check_eval_parent(parent0, node_e_idx, node_v_idx)
-
-    res = res && hash_list_subset(\
-        node.ctx_idx,\
-        parent0.ctx_idx,\
-        node.parent0_quot,\
-        contexts,\
-        ctx_hashes\
-    )
-
-    res = res && input_term.kind == EXPR_LAM
-    res = res && result_term.kind == EXPR_LAM
-
-    // ensure name correct
-    res = res && input_term.name == node.max_binding
-
+// Checks evaluation of both lam terms and pi terms
 def check_eval_pi(\
     ExpRule node,\
     ExpRule[PROOF_SIZE] proof,\
@@ -235,6 +214,8 @@ def check_eval_pi(\
 
     res = res && check_eval_parent(parent0, pi_p_idx, pi_t_idx)
     res = res && check_eval_parent(parent1, pi_pp_idx, pi_tp_idx)
+    res = res && check_expected_binding(parent0, node.max_binding)
+    res = res && check_expected_binding(parent1, node.max_binding + 1)
     res = res && input_term.name == node.max_binding
 
     return res
@@ -270,6 +251,8 @@ def check_eval_app(ExpRule node, ExpRule[NUM_TERMS] proof, ExpTerm[NUM_TERMS] te
     res = res && result_term.kind == EXPR_APP
     res = res && check_eval_parent(parent0, node_e_idx, node_n_idx)
     res = res && check_eval_parent(parent1, node_ep_idx, node_vp_idx)
+    res = res && check_expected_binding(parent0, node.max_binding)
+    res = res && check_expected_binding(parent1, node.max_binding)
 
     return res
 
@@ -299,11 +282,16 @@ def check_eval_app_lam(ExpRule node, ExpRule[NUM_TERMS] proof, ExpLift[NUM_LIFTS
     res = res && check_eval_parent(parent0, node_f_idx, parent0_result_idx)
     res = res && (parent0_result_term.kind == EXPR_LAM || parent0_result_term.kind == EXPR_PI)
     res = res && hash_list_subset(node.ctx_idx, parent0.ctx_idx, node.parent0_quot, contexts, ctx_hashes)
+    // no context subsetting for parent1 ... just check wrote equality
+    res = res && node.ctx_idx == parent1.ctx_idx
 
     res = res && parent1.rule == RULE_EVAL_APP_LAM_SUB
     res = res && parent1.extra == node_e_idx
     res = res && parent1.input_term_idx == parent0_b_idx
     res = res && parent1.result_term_idx == node_vpp_idx
+
+    res = res && check_expected_binding(parent0, node.max_binding)
+    res = res && check_expected_binding(parent1, node.max_binding)
 
     return res
 
@@ -332,6 +320,9 @@ def check_eval_app_lam_sub(ExpRule node, ExpRule[NUM_TERMS] proof, ExpLift[NUM_L
     res = res && check_eval_parent(parent0, node_e_idx, parent0_v_idx)
     res = res && check_eval_parent(parent1, node_b_idx, lift_vp_idx)
     res = res && node_vpp_idx == lift_vpp_idx
+    res = res && check_parent_lift(node, lift)
+    res = res && check_expected_binding(parent0, node.max_binding)
+    res = res && check_expected_binding(parent1, node.max_binding + 1)
 
     res = res && hash_list_subset_push(\
         node.ctx_idx,\
@@ -359,6 +350,8 @@ def check_eval_transitive(ExpRule node, ExpRule[NUM_TERMS] proof, ExpTerm[NUM_TE
     field parent0_res = get_eval_parent_res(parent0, node.input_term_idx)
     field parent1_inp = get_eval_parent_input(parent1, node.result_term_idx)
     res = res && check_eval_parent(parent0, node.input_term_idx, parent1_inp)
+    res = res && check_expected_binding(parent0, node.max_binding)
+    res = res && check_expected_binding(parent1, node.max_binding)
     res = res && check_eval_parent(\
         parent1,\
         parent0_res,\
@@ -367,8 +360,6 @@ def check_eval_transitive(ExpRule node, ExpRule[NUM_TERMS] proof, ExpTerm[NUM_TE
 
     return res
 
-// TODO: assert parent rule isn't rule_null
-// TODO: remove type_var ... can just use a single rule for type and eval...
 def check_type_var(ExpRule node, ExpRule[NUM_TERMS] proof, ExpLift[NUM_LIFTS] lifts, ExpTerm[NUM_TERMS] terms, HashLists<CONTEXT_SIZE> contexts, field alpha, field beta, field[CONTEXT_SIZE] ctx_hashes) -> bool:
     ExpTerm input_term = terms[node.input_term_idx]
     ExpLift lift_node = lifts[node.lift_rule]
@@ -384,6 +375,7 @@ def check_type_var(ExpRule node, ExpRule[NUM_TERMS] proof, ExpLift[NUM_LIFTS] li
         ctx_hashes\
     )
     res = res && lift_node.result_term_idx == node.result_term_idx
+    res = res && check_parent_lift(node, lift_node)
 
     return res
 
@@ -403,7 +395,7 @@ def check_type_sort(ExpRule node, ExpTerm[NUM_TERMS] terms) -> bool:
 
 // ============================================================================
 //
-//          C |- A => A'   (A':C, l) |- b :: B
+//            (A:C, l) |- b :: B
 // ----------------------------------------------------------------------------
 //          (C, l) |- \ -> b :: (pi A.B)
 //
@@ -412,13 +404,15 @@ def check_type_lam(ExpRule node, ExpRule[NUM_TERMS] proof, ExpTerm[NUM_TERMS] te
     ExpTerm input_term = terms[node.input_term_idx]
     ExpTerm result_term = terms[node.result_term_idx]
 
-    // TODO: add A eval...
     ExpRule parent0 = proof[node.parent0]
 
     // ensure node well formed
     bool res = input_term.kind == EXPR_LAM
     res = res && result_term.kind == EXPR_PI
 
+    // This rule does NOT evaluate or check the domain type
+    // This is unnecessary because the associated Pi type will be checked
+    // on all apps using the lambda
     field node_b_idx = input_term.right
     field node_A_idx = result_term.left
     field node_B_idx = result_term.right
@@ -445,6 +439,7 @@ def check_type_lam(ExpRule node, ExpRule[NUM_TERMS] proof, ExpTerm[NUM_TERMS] te
     res = res && p_B_idx == node_B_idx
     res = res && p_b_idx == node_b_idx
     res = res && input_term.name == node.max_binding
+    res = res && check_expected_binding(parent0, node.max_binding + 1)
 
     return res
 
@@ -474,7 +469,6 @@ def check_type_pi_sub(ExpRule node, ExpRule[NUM_TERMS] proof, ExpTerm[NUM_TERMS]
         ctx_hashes\
     )
 
-
     res = res && check_eval_parent(\
         parent0,\
         node.input_term_idx,\
@@ -482,6 +476,8 @@ def check_type_pi_sub(ExpRule node, ExpRule[NUM_TERMS] proof, ExpTerm[NUM_TERMS]
     )
     res = res && node.result_term_idx == parent1.result_term_idx
     res = res && node.extra == parent1.input_term_idx
+    res = res && check_expected_binding(parent0, node.max_binding)
+    res = res && check_expected_binding(parent1, node.max_binding)
     return res
 
 // ============================================================================
@@ -505,6 +501,8 @@ def check_type_pi(ExpRule node, ExpRule[NUM_TERMS] proof, ExpTerm[NUM_TERMS] ter
     res = res && result_term.kind == EXPR_SORT
 
     res = res && parent0.rule == RULE_TYPE_PI_SUB
+    // does not context subset for parent0, just check wrote equality
+    res = res && parent0.ctx_idx == node.ctx_idx
     res = res && parent0.input_term_idx == input_term.left
 
     res = res && parent1.input_term_idx == input_term.right
@@ -519,18 +517,13 @@ def check_type_pi(ExpRule node, ExpRule[NUM_TERMS] proof, ExpTerm[NUM_TERMS] ter
         beta,\
         ctx_hashes\
     )
+    res = res && check_expected_binding(parent0, node.max_binding)
+    res = res && check_expected_binding(parent1, node.max_binding + 1)
 
     res = res && input_term.name == node.max_binding
     res = res && result_term.name == imax(sort_i.name, sort_j.name)
 
     return res
-
-
-// COLLECT ARGS
-
-//
-//
-//
 
 // ============================================================================
 //
@@ -547,7 +540,7 @@ def check_type_app(ExpRule node, ExpRule[NUM_TERMS] proof, ExpLift[NUM_LIFTS] li
 
     ExpRule parent0 = proof[node.parent0]
     ExpRule parent1 = proof[node.parent1]
-    ExpTerm parent0_res = terms[parent0.result_term_idx] // TODO: could move...
+    ExpTerm parent0_res = terms[parent0.result_term_idx]
     ExpLift lift_rule = lifts[node.lift_rule]
 
     bool res = input_term.kind == EXPR_APP
@@ -573,6 +566,8 @@ def check_type_app(ExpRule node, ExpRule[NUM_TERMS] proof, ExpLift[NUM_LIFTS] li
         contexts,\
         ctx_hashes\
     )
+    res = res && check_expected_binding(parent0, node.max_binding)
+    res = res && check_expected_binding(parent1, node.max_binding)
 
     res = res && parent1.result_term_idx == lift_rule.input_term_idx
     res = res && node.result_term_idx == lift_rule.result_term_idx
@@ -619,6 +614,8 @@ def check_type_app_sub(ExpRule node, ExpRule[NUM_TERMS] proof, ExpLift[NUM_LIFTS
         beta,\
         ctx_hashes\
     )
+    res = res && check_expected_binding(parent0, node.max_binding)
+    res = res && check_expected_binding(parent1, node.max_binding + 1)
     return res
 
 def check_proof_irrel_sub1(ExpRule node, ExpRule[PROOF_SIZE] proof, ExpTerm[NUM_TERMS] terms) -> bool:
@@ -638,6 +635,9 @@ def check_proof_irrel_sub1(ExpRule node, ExpRule[PROOF_SIZE] proof, ExpTerm[NUM_
 
     res = res && result_term.kind == EXPR_SORT
     res = res && result_term.name == 0
+    res = res && check_expected_binding(parent0, node.max_binding)
+    res = res && check_expected_binding(parent1, node.max_binding)
+
     return res
 
 def check_proof_irrel(ExpRule node, ExpRule[PROOF_SIZE] proof, ExpTerm[NUM_TERMS] terms) -> bool:
@@ -650,6 +650,8 @@ def check_proof_irrel(ExpRule node, ExpRule[PROOF_SIZE] proof, ExpTerm[NUM_TERMS
     res = res && parent0.input_term_idx == node.input_term_idx
     res = res && parent0.result_term_idx == parent1.extra
     res = res && parent1.input_term_idx == node.result_term_idx
+    res = res && check_expected_binding(parent0, node.max_binding)
+    res = res && check_expected_binding(parent1, node.max_binding)
 
     return res
 
@@ -675,6 +677,9 @@ def check_eval_type(ExpRule node, ExpRule[PROOF_SIZE] proof) -> bool:
 
     res = res && node_a_idx == p0_a_idx
     res = res && check_eval_parent(parent1, p0_T_idx, node_Tp_idx)
+    res = res && parent1.ctx_idx == EMPTY_CONTEXT_IDX
+    res = res && check_expected_binding(parent0, node.max_binding)
+    res = res && check_expected_binding(parent1, node.max_binding)
 
     return res
 
@@ -693,6 +698,7 @@ def check_type_ind(\
     bool res = input_term.kind == EXPR_IND
     res = res && inductives[input_term.ind].ty == parent0.input_term_idx
     res = res && node.result_term_idx == parent0.result_term_idx
+    res = res && check_parent_lift(node, parent0)
     return res
 
 
@@ -718,6 +724,7 @@ def check_type_ind_ctor(\
 
     bool res = input_term.kind == EXPR_IND_CTOR
     res = res && hash_list_contains(ind.rules, input_term.ind_ctor, parent0.input_term_idx, node.ind_ctor_quot, rules, alpha, beta, rule_hashes)
+    res = res && check_parent_lift(node, parent0)
     //res = res && rule_ty == parent0.input_term_idx
     res = res && node.result_term_idx == parent0.result_term_idx
     return res
@@ -746,6 +753,7 @@ def check_type_ind_rec(\
     res = res && parent0.extra == inductive.num_params
     res = res && parent0.extra2 == inductive.rec_body
     res = res && parent1.result_term_idx == node.result_term_idx
+    res = res && check_parent_lift(node, parent1)
     return res
 
 //  (f is ind_elim) (get_arg f (ty_args + 1 + i) => e_i) (f has enough args)
@@ -999,6 +1007,7 @@ def check_type_ax(ExpRule node, ExpTerm[NUM_TERMS] terms, ExpLift[NUM_LIFTS] lif
     bool res = input_term.kind == EXPR_AX
     res = res && ax_term == lift.input_term_idx
     res = res && node.result_term_idx == lift.result_term_idx
+    res = res && check_parent_lift(node, lift)
     return res
 
 // lean4 extensions
@@ -1026,6 +1035,7 @@ def check_eval_proj(\
     // TODO: refactor oportunity...using parent0.result_term.top_level_func adds a lot of overhead...
     field parent0_res = get_eval_parent_res(parent0, input_term.left)
     res = res && check_eval_parent(parent0, input_term.left, parent0_res)
+    res = res && check_expected_binding(parent0, node.max_binding)
     ExpTerm evaled_input_term = terms[parent0_res]
     ExpTerm input_tlf = terms[evaled_input_term.top_level_func]
     res = res && hash_list_subset(\
@@ -1076,6 +1086,7 @@ def check_eval_proj_simpl(\
 
     bool res = input_term.kind == EXPR_PROJ
     res = res && result_term.kind == EXPR_PROJ
+    res = res && check_expected_binding(parent0, node.max_binding)
     res = res && is_eval_rule(parent0.rule)
     res = res && check_eval_parent(\
         parent0,\
@@ -1120,7 +1131,8 @@ def check_walk_proj(\
             lift.input_term_idx == projector_idx &&\
             node.result_term_idx == lift.result_term_idx &&\
             lift.max_binding == node.max_binding &&\
-            lift.min_binding_seen == MAX_BINDING\
+            lift.min_binding_seen == MAX_BINDING &&\
+            check_parent_lift(node, lift)\
         else\
             false\
         fi\
@@ -1195,6 +1207,7 @@ def check_type_proj(\
         parent1_inp_idx,\
         node.result_term_idx\
     )
+    res = res && check_expected_binding(parent1, node.max_binding)
     res = res && parent1_inp.kind == EXPR_PROJ
     res = res && parent1_inp.left == parent0.result_term_idx
     res = res && parent1_inp.index == input_term.index
@@ -1207,7 +1220,8 @@ def check_terms(ExpTerm[NUM_TERMS] terms) -> bool:
         ExpTerm term = terms[i]
         ExpTerm f = terms[term.left]
         res = res && if term.kind == EXPR_APP then\
-            term.top_level_func == f.top_level_func\
+            term.top_level_func == f.top_level_func &&\
+            term.argc == f.argc + 1\
         else\
             term.top_level_func == i\
         fi
@@ -1328,11 +1342,11 @@ def main(\
         type_var_ok = type_var_ok && if node.rule == RULE_TYPE_VAR then check_type_var(node, proof, lifts, terms, contexts, alpha, beta, ctx_hashes) else true fi
         type_sort_ok = type_sort_ok && if node.rule == RULE_TYPE_SORT then check_type_sort(node, terms) else true fi
         type_lam_ok = type_lam_ok && if node.rule == RULE_TYPE_LAM then check_type_lam(node, proof, terms, contexts, alpha, beta, ctx_hashes) else true fi
-       type_pi_ok = type_pi_ok && if node.rule == RULE_TYPE_PI then check_type_pi(node, proof, terms, contexts, alpha, beta, ctx_hashes) else true fi
-       type_pi_ok = type_pi_ok && if node.rule == RULE_TYPE_PI_SUB then check_type_pi_sub(node, proof, terms, contexts, ctx_hashes) else true fi
+        type_pi_ok = type_pi_ok && if node.rule == RULE_TYPE_PI then check_type_pi(node, proof, terms, contexts, alpha, beta, ctx_hashes) else true fi
+        type_pi_ok = type_pi_ok && if node.rule == RULE_TYPE_PI_SUB then check_type_pi_sub(node, proof, terms, contexts, ctx_hashes) else true fi
         type_app_ok = type_app_ok && if node.rule == RULE_TYPE_APP then check_type_app(node, proof, lifts, terms, contexts, ctx_hashes) else true fi
         type_app_ok = type_app_ok && if node.rule == RULE_TYPE_APP_SUB then check_type_app_sub(node, proof, lifts, terms, contexts, alpha, beta, ctx_hashes) else true fi
-      eval_type_ok = eval_type_ok && if node.rule == RULE_EVAL_TYPE then check_eval_type(node, proof) else true fi
+        eval_type_ok = eval_type_ok && if node.rule == RULE_EVAL_TYPE then check_eval_type(node, proof) else true fi
         type_ind_ok = type_ind_ok && if node.rule == RULE_TYPE_IND then check_type_ind(node, proof, lifts, terms, inductives) else true fi
         type_ind_ctor_ok = type_ind_ctor_ok && if node.rule == RULE_TYPE_IND_CTOR then check_type_ind_ctor(node, proof, lifts, terms, inductives, rules, alpha, beta, rule_hashes) else true fi
         type_ind_rec_ok = type_ind_rec_ok && if node.rule == RULE_TYPE_IND_REC then check_type_ind_rec(node, proof, lifts, terms, inductives) else true fi
@@ -1341,7 +1355,7 @@ def main(\
         proof_irrel_ok = proof_irrel_ok && if node.rule == RULE_PROOF_IRREL then check_proof_irrel(node, proof, terms) else true fi
         proof_irrel_ok = proof_irrel_ok && if node.rule == RULE_PROOF_IRREL_SUB1 then check_proof_irrel_sub1(node, proof, terms) else true fi
 
-    //    // Lean4 Extensions
+    //  //  // Lean4 Extensions
         eval_proj_ok = eval_proj_ok && if node.rule == RULE_EVAL_PROJ then check_eval_proj(node, proof, terms, inductives, contexts, ctx_hashes) else true fi
         eval_proj_simpl_ok = eval_proj_simpl_ok && if node.rule == RULE_EVAL_PROJ_SIMPL then check_eval_proj_simpl(node, proof, terms, inductives, contexts, ctx_hashes) else true fi
         type_proj_ok = type_proj_ok && if node.rule == RULE_TYPE_PROJ then check_type_proj(node, proof, terms) else true fi

@@ -723,8 +723,6 @@ impl<'a> Encoder<'a> {
     }
 
     fn construct_permutation_check(ram1: &Ram, ram2: &Ram, alpha: Term, beta: Term) -> Term {
-        assert!(ram1.epoch != 1);
-        assert!(ram2.epoch != 1);
         // TODO: support non-field indices?
         //       Just do a cast on permuation check, and have correct type
         //       in sorted check
@@ -854,26 +852,26 @@ impl<'a> Encoder<'a> {
         let mut checks = vec![];
         checks.push(computation.outputs()[0].clone());
         for ram in self.rams.iter() {
-            let sorted_ram = if ram.epoch == 0 {
+            let sorted_ram = if true {
                 let sorted_ram = ram.sorted_by_index(computation, self.cache);
                 // TODO: better error handling
                 // TODO: is there a cleaner way to get the field type?
-                let permutation_check = Encoder::construct_permutation_check(
-                    ram,
-                    &sorted_ram,
-                    alpha.clone(),
-                    beta.clone(),
-                );
-                checks.push(permutation_check);
+                //let permutation_check = Encoder::construct_permutation_check(
+                //    ram,
+                //    &sorted_ram,
+                //    alpha.clone(),
+                //    beta.clone(),
+                //);
+                //checks.push(permutation_check);
                 sorted_ram
             } else {
                 let mut count = 0;
                 waksman(ram, computation, self.cache)
             };
 
-            let sorted_check = Encoder::construct_sorted_check(&sorted_ram, computation);
+            //let sorted_check = Encoder::construct_sorted_check(&sorted_ram, computation);
 
-            checks.push(sorted_check);
+            //checks.push(sorted_check);
         }
         computation.outputs[0] = term(AND, checks);
     }

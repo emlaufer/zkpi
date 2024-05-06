@@ -531,7 +531,6 @@ impl ExpRule {
         parent0: usize,
         parent0_quot: usize,
         parent1: usize, // thsi should be eval_app_lam_p1
-        parent1_quot: usize,
         max_binding: usize,
     ) -> ExpRule {
         ExpRule {
@@ -3095,7 +3094,7 @@ impl Exporter {
                         max_binding + 1,
                     )?
                 } else {
-                    let rule = ExpRule::eval_id(res_bod, zk_context, max_binding);
+                    let rule = ExpRule::eval_id(res_bod, zk_context, max_binding + 1);
                     self.add_zk_rule(rule)
                 };
 
@@ -3441,7 +3440,6 @@ impl Exporter {
                         f_rule,
                         f_quot,
                         eval_app_p1_idx,
-                        zk_context,
                         max_binding,
                     )
                 } else {
@@ -3672,7 +3670,8 @@ impl Exporter {
                         context,
                         max_binding,
                     ) {
-                        let ty_rule = ExpRule::eval_ty(e, domain_ty, e_subs, 0, e_rule, eval_rule);
+                        let ty_rule =
+                            ExpRule::eval_ty(e, domain_ty, e_subs, max_binding, e_rule, eval_rule);
 
                         e_rule = self.add_zk_rule(ty_rule);
                         break;
@@ -3708,7 +3707,7 @@ impl Exporter {
                                         e,
                                         final_eval_rule.result_term_idx,
                                         e_subs,
-                                        0,
+                                        max_binding,
                                         e_rule,
                                         eval_rule,
                                     );
@@ -3828,7 +3827,12 @@ impl Exporter {
                                         max_binding,
                                     ) {
                                         let ty_rule = ExpRule::eval_ty(
-                                            e, domain_ty, e_subs, 0, e_rule, eval_rule,
+                                            e,
+                                            domain_ty,
+                                            e_subs,
+                                            max_binding,
+                                            e_rule,
+                                            eval_rule,
                                         );
 
                                         e_rule = self.add_zk_rule(ty_rule);
