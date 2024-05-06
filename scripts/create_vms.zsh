@@ -16,7 +16,7 @@ n=$1
 cores=$2
 ty=$3
 
-IMAGE='zkpi'
+IMAGE='zkpi-new'
 
 function usage {
   echo "Usage: $0 N_VMS CORES" >&2

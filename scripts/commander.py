@@ -18,7 +18,7 @@ import csv
 import pandas as pd
 
 # CHANGE STRING TO DO EITHER MATHLIB OR STDLIB
-library = "stdlib"
+library = "mathlib"
 
 class Binary(object):
     path: str
@@ -108,7 +108,7 @@ def run_thread(thm_name, vm_name):
     thm_name = thm_name.replace("'", "\\'")
     try:
         out = sub.run(
-            [f"gcloud compute ssh --zone us-west1-b --project gcp-zkpi evan@{} -- \"cd crabpi; ./driver.py -e {library}.out --time {}\"".format(vm_name, thm_name)], timeout=1800, stderr=sub.PIPE, stdout=sub.PIPE, input="", shell=True
+            [f"gcloud compute ssh --zone us-west1-b --project gcp-zkpi evan@{vm_name} -- \"cd crabpi; ./driver.py -e {library}.out --time {thm_name}\""], timeout=1800, stderr=sub.PIPE, stdout=sub.PIPE, input="", shell=True
         )
         #print("running: ", out.args)
         outstr = out.stdout
@@ -132,6 +132,8 @@ def run_thread(thm_name, vm_name):
             ret_code = -1235
         elif "eta unsupported" in str(outstrstr):
             ret_code = -1236 # eta expansion
+        elif "Typing error" in str(outstrstr):
+            ret_code = -1237
         else:
             ret_code = out.returncode
 
@@ -161,8 +163,8 @@ username = args.user
 
 print(f"{len(machines)} machines")
 #thms = pd.read_csv(args.thms)
-done = pd.read_csv(f"{library}_times_new.csv")
-rerun = done[done.returncode == 1] 
+done = pd.read_csv(f"{library}_times_new_complete.csv")
+rerun = done[(done.returncode == 1) | (done.returncode == -1237)] 
 #print(rerun)
 #done = done[done["name"].str.contains("'")]
 #thms = list(done["name"])

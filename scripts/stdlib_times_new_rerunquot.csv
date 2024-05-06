@@ -1,0 +1,12 @@
+name,r1cs_size,simplify_time,compile_time,gen_time,precompute_time,prove_time,verify_time,returncode
+well_founded.fix.equations._eqn_1,-1,-1,-1,-1,-1,-1,-1,-1237
+sigma.eq,-1,-1,-1,-1,-1,-1,-1,-1237
+eq_of_incomp,-1,-1,-1,-1,-1,-1,-1,-1237
+vector.tail_cons,-1,-1,-1,-1,-1,-1,-1,-1237
+incomp_iff_eq,-1,-1,-1,-1,-1,-1,-1,-1237
+nat.sub_eq_iff_eq_add,-1,-1,-1,-1,-1,-1,-1,-1237
+_private.963699147.sub_sub_cancel,-1,-1,-1,-1,-1,-1,-1,-1237
+vector.map._main,-1,-1,-1,-1,-1,-1,-1,-1000
+nat.bit_cases_on._proof_1,-1,-1,-1,-1,-1,-1,-1,-1000
+nat.bit1_val,-1,-1,-1,-1,-1,-1,-1,-1000
+nat.test_bit_zero,-1,-1,-1,-1,-1,-1,-1,-1000
