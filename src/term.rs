@@ -1727,13 +1727,6 @@ impl Evaluator {
                     // simply return the elim... because it is a subsingleton it
                     // it doesn't depend on anything else
                     let elim = &args[1 + inductive.global_params().len()];
-                    println!("CONTEXT: {:?}", typing_context);
-                    println!(
-                        "GOT CTOR: {} for {} (for term: {}) and type: {}",
-                        ctor_app, argument, term, arg_type
-                    );
-
-                    println!("RETURN: {}", elim);
                     return Some(elim.clone());
                 }
             }
@@ -1741,75 +1734,6 @@ impl Evaluator {
 
         None
     }
-
-    //pub fn try_unify_rec(
-    //    &mut self,
-    //    term: Term,
-    //    context: &mut Context,
-    //    expected: Term,
-    //) -> Option<Term> {
-    //    if let TermData::Axiom(name) = &*term.top_level_func() {
-    //        if name.contains(".rec") {
-    //            let args = term.app_args();
-    //            let inductive_name = name.split(".rec").next().unwrap();
-    //            let inductive = self.inductives.get(inductive_name).unwrap().clone();
-    //            if args.len() == inductive.elim(0).params().len() {
-    //                let argument = &args[args.len() - 1];
-    //                if let TermData::Axiom(rule) = &*argument.top_level_func() {
-    //                    let (ind_base_name, ind_universe_string) =
-    //                        inductive_name.rsplit_once(".").unwrap();
-
-    //                    // match rec with the inductive name
-    //                    if rule.starts_with(ind_base_name)
-    //                        && rule.ends_with(ind_universe_string)
-    //                        && rule != inductive_name
-    //                        && !rule.contains("rec")
-    //                    {
-    //                        let rec = match &*term {
-    //                            TermData::App(f, _) => f,
-    //                            _ => {
-    //                                panic!("Not an app");
-    //                            }
-    //                        };
-
-    //                        let rule_num = inductive.rule_lookup.get(rule).expect(&format!("Couldn't find rule number {} of inductive {:?} inside expr {:?} (ind_base_name {}, ind_universe_string {})", rule, inductive_name, argument, ind_base_name, ind_universe_string));
-    //                        let elim = &args[1 + inductive.global_params().len() + rule_num];
-
-    //                        let rule_args =
-    //                            argument.app_args()[inductive.global_params().len()..].to_vec();
-    //                        let mut rec_args = Vec::new();
-    //                        for (i, ty) in inductive.rules[*rule_num].ty.params()
-    //                            [inductive.global_params().len()..]
-    //                            .iter()
-    //                            .enumerate()
-    //                        {
-    //                            // if recursive, apply the eliminator again...
-    //                            if let TermData::Axiom(name) = &*ty.top_level_func() {
-    //                                if name == &inductive.name {
-    //                                    // TODO: can do eval later or even better lazily
-    //                                    rec_args.push(app(rec.clone(), rule_args[i].clone()));
-    //                                }
-    //                            }
-    //                        }
-
-    //                        let mut elim_app = vec![elim.clone()];
-    //                        elim_app.extend_from_slice(&rule_args);
-    //                        elim_app.extend_from_slice(&rec_args);
-
-    //                        let elim = app_list(&elim_app);
-    //                        let new_res = self
-    //                            .eval_with_context(elim.clone(), context, typing_context, false, 10)
-    //                            .unwrap();
-    //                        //println!("got eval {:?}\n\t=> {:?}", term, new_res);
-    //                        return Some(new_res);
-    //                    }
-    //                }
-    //            }
-    //        }
-    //    }
-
-    //    None
-    //}
 
     pub fn ty(&mut self, term: Term) -> Result<Term, String> {
         self.ty_with_context(term, &mut Context::new())
