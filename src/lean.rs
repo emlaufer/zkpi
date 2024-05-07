@@ -742,7 +742,9 @@ impl LeanEncoding {
             Expression::ELN { value } => {
                 let mut value = value.clone();
                 if value > 10_000 {
-                    return Err("Gigantic NAT...failing fast".to_string());
+                    axioms.insert(format!("nat_{}", value), term::ind("Nat.{}"));
+                    return Ok(term::axiom(format!("nat_{}", value)));
+                    //return Err(format!("Gigantic NAT...failing fast: {}", value));
                 }
                 // For now...we convert to normal Nat...
                 let mut res = term::ind_ctor("Nat.{}", "zero");
@@ -908,11 +910,11 @@ impl LeanEncoding {
             return Ok(term::ind_ctor(ind_name_full, rule_name));
         }
 
-        if name_string.starts_with("quot") {
-            if name_string != "quot.sound" {
+        if name_string.starts_with("Quot") {
+            if name_string != "Quot.sound" {
                 return Ok(term::axiom(name_string));
             } else {
-                return Err(format!("We don't support quot.sound: {}", name_string));
+                return Err(format!("We don't support Quot.sound: {}", name_string));
             }
         }
 
@@ -937,11 +939,12 @@ impl LeanEncoding {
             // convert universes u0,u1,...,un to a string {u0,u1,...,un}
             //println!("Exporting rec: {}", name_string);
             // TODO: can push off lookup...
-            let inductive_name = name_string.trim_end_matches(".rec");
-            let inductive_name = inductive_name.trim_end_matches(|c| {
-                c == '{' || c == '}' || c == ',' || c == '.' || char::is_numeric(c)
-            });
-            let def = self.lookup_definition(inductive_name)?;
+            let mut inductive_name = name_string.trim_end_matches(".rec").to_string();
+            let name_parts = inductive_name.split(".").collect::<Vec<_>>();
+            if name_parts[name_parts.len() - 1].ends_with("}") {
+                inductive_name = name_parts[0..name_parts.len() - 1].join(".");
+            }
+            let def = self.lookup_definition(&inductive_name)?;
             //println!(
             //    "uni inst for {} is {:?}",
             //    name_string, &universe_instantiation

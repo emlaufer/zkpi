@@ -240,8 +240,8 @@ impl Theorem {
 
     pub fn prove(&self) -> Result<(), String> {
         let mut eval = Evaluator::new(&self.axioms, self.inductives.clone());
-        println!("original term: {:?}", self.val);
-        println!("original ty: {:?}", self.ty);
+        //println!("original term: {:?}", self.val);
+        //println!("original ty: {:?}", self.ty);
         println!("simplifying...");
         let test_val = {
             let test = eval
@@ -1582,8 +1582,11 @@ impl Evaluator {
         //}
 
         debug!(
-            "\n C = {:?}\n T = {:?}\n |- {:?} => {:?}",
-            context, typing_context, term, res
+            "\n C = {:.20}\n T = {:.20}\n |- {:.20} => {:.20}",
+            format!("{:?}", context),
+            format!("{:?}", typing_context),
+            format!("{:?}", term),
+            format!("{:?}", res)
         );
         Ok(res)
     }
@@ -1868,12 +1871,12 @@ impl Evaluator {
                         e_ty_value.clone(),
                         context,
                     ) {
-                        println!("term: {}", term);
-                        println!("f_ty: {}", f_ty);
-                        println!("e: {}", e);
-                        println!("context: {:?}", context);
-                        println!("e_ty: {}", e_ty);
-                        println!("domain: {}", domain_value);
+                        //println!("term: {}", term);
+                        //println!("f_ty: {}", f_ty);
+                        //println!("e: {}", e);
+                        //println!("context: {:?}", context);
+                        //println!("e_ty: {}", e_ty);
+                        //println!("domain: {}", domain_value);
                         return Err(format!(
                             "Type mismatch: got {}, expected: {}",
                             e_ty_value, domain_value
@@ -1991,7 +1994,12 @@ impl Evaluator {
 
         self.ty_cache.insert(term.clone(), context, res.clone());
 
-        debug!("\n C = {:?}\n |- {:?} :: {:?}", context, term, res);
+        debug!(
+            "\n C = {:.20}\n |- {:.20} :: {:.20}",
+            format!("{:?}", context),
+            format!("{:?}", term),
+            format!("{:?}", res)
+        );
         Ok(res)
     }
 

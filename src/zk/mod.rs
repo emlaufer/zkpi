@@ -2854,7 +2854,7 @@ impl Exporter {
     fn export_get_arg(&mut self, input_idx: usize, arg_c: usize) -> Result<usize, String> {
         let input = self.get_zk_term(input_idx).clone();
 
-        assert!(input.kind == EXPR_APP);
+        assert!(input.kind == EXPR_APP, "GOT: {}", input.kind);
 
         if arg_c == 0 {
             let result_idx = input.right;
@@ -3807,9 +3807,28 @@ impl Exporter {
                                     max_binding,
                                 );
                                 if rule_idx.is_ok() {
-                                    let rule_idx = rule_idx.clone().unwrap();
-                                    let rule = self.get_zk_rule(rule_idx).clone();
-                                    curr_e_res = rule.result_term_idx;
+                                    let unify_rule_idx = rule_idx.clone().unwrap();
+                                    let unify_rule = self.get_zk_rule(unify_rule_idx).clone();
+
+                                    let eval_erule_idx = self.export_eval(
+                                        unify_rule.result_term_idx,
+                                        HashList::EMPTY,
+                                        &mut HashMap::new(),
+                                        max_binding,
+                                    );
+                                    let eval_erule = self.get_zk_rule(eval_erule_idx);
+
+                                    let rule = ExpRule::eval_transitive(
+                                        curr_e_res,
+                                        eval_erule.result_term_idx,
+                                        HashList::EMPTY,
+                                        max_binding,
+                                        unify_rule_idx,
+                                        eval_erule_idx,
+                                    );
+                                    let rule_idx = self.add_zk_rule(rule.clone());
+
+                                    let curr_e_res = rule.result_term_idx;
                                     let e_rule_new = ExpRule::eval_ty(
                                         e,
                                         rule.result_term_idx,
@@ -4594,7 +4613,15 @@ impl Exporter {
                 let inductive = self.inductives.get(name).unwrap_or(
                     self.inductives
                         .iter()
-                        .find_map(|(k, v)| if k.starts_with(name) { Some(v) } else { None })
+                        .find_map(|(k, v)| {
+                            let k_parts = k.split(".").collect::<Vec<_>>();
+                            let k_parts = k_parts[0..k_parts.len() - 1].join(".");
+                            if name == &k_parts {
+                                Some(v)
+                            } else {
+                                None
+                            }
+                        })
                         .unwrap(),
                 );
                 let inductive_rule = inductive.rules[0].clone();
