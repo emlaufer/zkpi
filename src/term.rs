@@ -418,6 +418,15 @@ impl Inductive {
         res
     }
 
+    fn deps(&self) -> HashSet<String> {
+        let mut inds = self.ty.inds();
+        for rule in &self.rules {
+            inds = inds.union(&rule.ty.inds()).cloned().collect();
+        }
+        inds.remove(&self.name);
+        inds
+    }
+
     fn ty_body(&self) -> Term {
         let mut res = &self.ty;
         for i in 0..self.num_params {
@@ -1007,6 +1016,35 @@ pub enum TermData {
 }
 
 impl TermData {
+    pub fn inds(&self) -> HashSet<String> {
+        match self {
+            TermData::Binding(BindingData { domain, body, .. }) => {
+                domain.inds().union(&body.inds()).cloned().collect()
+            }
+            TermData::App(f, e) => f.inds().union(&e.inds()).cloned().collect(),
+            TermData::Proj(name, _, t) => {
+                let mut res = t.inds();
+                res
+            }
+            TermData::Ind(ind) => {
+                let mut h = HashSet::new();
+                h.insert(ind.to_string());
+                h
+            }
+            TermData::IndCtor(ind, ..) => {
+                let mut h = HashSet::new();
+                h.insert(ind.to_string());
+                h
+            }
+            TermData::IndRec(ind, ..) => {
+                let mut h = HashSet::new();
+                h.insert(ind.to_string());
+                h
+            }
+            _ => HashSet::new(),
+        }
+    }
+
     pub fn params(&self) -> Vec<Term> {
         let mut res = vec![];
         let mut curr_ty = self;
@@ -1340,7 +1378,19 @@ impl Evaluator {
     }
 
     pub fn generate_projector(&mut self, inductive: Inductive) {
-        if inductive.rules.len() != 1 {
+        for name in inductive.deps() {
+            let ind = self.inductives[&name].clone();
+            self.generate_projector(ind);
+        }
+
+        if inductive.rules.len() != 1
+            || self
+                .inductives
+                .get(&inductive.name)
+                .unwrap()
+                .projector
+                .is_some()
+        {
             return;
         }
 
@@ -1991,7 +2041,10 @@ impl Evaluator {
                 if let TermData::Ind(ind_full_name) = &*ind
                     && ind_full_name.starts_with(name)
                 {
-                    let projector = self.inductives[ind_full_name].projector.clone().unwrap();
+                    let projector = self.inductives[ind_full_name]
+                        .projector
+                        .clone()
+                        .expect(&format!("Could not unwrap proj: {}", ind_full_name));
                     let mut apps = vec![projector];
                     apps.extend(expr_ty.app_args());
                     apps.push(expr.clone());
