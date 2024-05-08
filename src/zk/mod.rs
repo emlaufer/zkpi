@@ -19,6 +19,7 @@ mod named_ir;
 mod sim;
 
 static mut LIFT_COUNTS_MAP: Lazy<HashMap<usize, usize>> = Lazy::new(|| HashMap::new());
+static mut SEEN_TY_TERMS: Lazy<HashSet<usize>> = Lazy::new(|| HashSet::new());
 
 const EXPR_NULL: usize = 0;
 const EXPR_VAR: usize = 1;
@@ -2293,6 +2294,9 @@ pub struct Exporter {
     zk_term_cache: HashMap<ExpTerm, usize>,
     zk_rule_cache: HashMap<ExpRule, usize>,
     zk_lift_cache: HashMap<ExpLift, usize>,
+    // (term, context, max_binding) to rule that evals it
+    zk_term_eval_cache: HashMap<(usize, usize, usize), usize>,
+    zk_term_ty_cache: HashMap<(usize, usize, usize), usize>,
 
     zk_term_free_bindings: HashMap<usize, HashSet<usize>>,
 }
@@ -2319,6 +2323,8 @@ impl Exporter {
             zk_term_cache: HashMap::new(),
             zk_rule_cache: HashMap::new(),
             zk_lift_cache: HashMap::new(),
+            zk_term_eval_cache: HashMap::new(),
+            zk_term_ty_cache: HashMap::new(),
 
             zk_term_free_bindings: HashMap::new(),
         }
@@ -2464,23 +2470,23 @@ impl Exporter {
 
         exporter.zk_input.compress();
 
-        let mut rule_type_counts = HashMap::new();
-        for rule in &exporter.zk_input.rules {
-            let count = rule_type_counts.get(&rule.rule).unwrap_or(&0);
-            rule_type_counts.insert(rule.rule, count + 1);
-        }
+        //let mut rule_type_counts = HashMap::new();
+        //for rule in &exporter.zk_input.rules {
+        //    let count = rule_type_counts.get(&rule.rule).unwrap_or(&0);
+        //    rule_type_counts.insert(rule.rule, count + 1);
+        //}
 
-        let mut rule_type_counts = rule_type_counts.iter().collect::<Vec<_>>();
-        rule_type_counts.sort_by_key(|a| a.1);
-        for (r, c) in rule_type_counts {
-            eprintln!("{}: {}", rule_to_string(*r), c);
-        }
+        //let mut rule_type_counts = rule_type_counts.iter().collect::<Vec<_>>();
+        //rule_type_counts.sort_by_key(|a| a.1);
+        //for (r, c) in rule_type_counts {
+        //    eprintln!("{}: {}", rule_to_string(*r), c);
+        //}
 
-        let mut rule_type_counts = unsafe { LIFT_COUNTS_MAP.iter().collect::<Vec<_>>() };
-        eprintln!("LIFTS");
-        for (r, c) in rule_type_counts {
-            eprintln!("{}: {}", rule_to_string(*r), c);
-        }
+        //let mut rule_type_counts = unsafe { LIFT_COUNTS_MAP.iter().collect::<Vec<_>>() };
+        //eprintln!("LIFTS");
+        //for (r, c) in rule_type_counts {
+        //    eprintln!("{}: {}", rule_to_string(*r), c);
+        //}
 
         Ok(exporter.zk_input)
     }
@@ -3347,6 +3353,12 @@ impl Exporter {
         context: &mut HashMap<usize, usize>,
         max_binding: usize,
     ) -> usize {
+        if let Some(rule) = self
+            .zk_term_eval_cache
+            .get(&(input_idx, zk_context, max_binding))
+        {
+            return *rule;
+        }
         //let input_idx = self.add_zk_term(input.clone());
         //
         let input = self.get_zk_term(input_idx).clone();
@@ -3545,7 +3557,11 @@ impl Exporter {
                 unimplemented!()
             }
         };
-        self.add_zk_rule(zk_rule)
+
+        let res = self.add_zk_rule(zk_rule);
+        self.zk_term_eval_cache
+            .insert((input_idx, zk_context, max_binding), res);
+        return res;
     }
 
     pub fn export_ty(
@@ -3556,6 +3572,12 @@ impl Exporter {
         max_binding: usize,
         //expected_idx: usize,
     ) -> Result<usize, String> {
+        if let Some(rule) = self
+            .zk_term_ty_cache
+            .get(&(input_idx, zk_context, max_binding))
+        {
+            return Ok(*rule);
+        }
         let input = self.get_zk_term(input_idx).clone();
         //let expected = self.get_zk_term(expected_idx).clone();
 
@@ -3807,28 +3829,31 @@ impl Exporter {
                                     max_binding,
                                 );
                                 if rule_idx.is_ok() {
-                                    let unify_rule_idx = rule_idx.clone().unwrap();
-                                    let unify_rule = self.get_zk_rule(unify_rule_idx).clone();
+                                    let rule_idx = rule_idx.clone().unwrap();
+                                    let rule = self.get_zk_rule(rule_idx).clone();
+                                    curr_e_res = rule.result_term_idx;
+                                    //let unify_rule_idx = rule_idx.clone().unwrap();
+                                    //let unify_rule = self.get_zk_rule(unify_rule_idx).clone();
 
-                                    let eval_erule_idx = self.export_eval(
-                                        unify_rule.result_term_idx,
-                                        HashList::EMPTY,
-                                        &mut HashMap::new(),
-                                        max_binding,
-                                    );
-                                    let eval_erule = self.get_zk_rule(eval_erule_idx);
+                                    //let eval_erule_idx = self.export_eval(
+                                    //    unify_rule.result_term_idx,
+                                    //    HashList::EMPTY,
+                                    //    &mut HashMap::new(),
+                                    //    max_binding,
+                                    //);
+                                    //let eval_erule = self.get_zk_rule(eval_erule_idx);
 
-                                    let rule = ExpRule::eval_transitive(
-                                        curr_e_res,
-                                        eval_erule.result_term_idx,
-                                        HashList::EMPTY,
-                                        max_binding,
-                                        unify_rule_idx,
-                                        eval_erule_idx,
-                                    );
-                                    let rule_idx = self.add_zk_rule(rule.clone());
+                                    //let rule = ExpRule::eval_transitive(
+                                    //    curr_e_res,
+                                    //    eval_erule.result_term_idx,
+                                    //    HashList::EMPTY,
+                                    //    max_binding,
+                                    //    unify_rule_idx,
+                                    //    eval_erule_idx,
+                                    //);
+                                    //let rule_idx = self.add_zk_rule(rule.clone());
 
-                                    let curr_e_res = rule.result_term_idx;
+                                    //let curr_e_res = rule.result_term_idx;
                                     let e_rule_new = ExpRule::eval_ty(
                                         e,
                                         rule.result_term_idx,
@@ -4136,8 +4161,10 @@ impl Exporter {
                 unimplemented!()
             }
         };
-
-        Ok(self.add_zk_rule(zk_rule))
+        let res = self.add_zk_rule(zk_rule);
+        self.zk_term_ty_cache
+            .insert((input_idx, zk_context, max_binding), res);
+        Ok(res)
     }
 
     fn export_walk_proj(
