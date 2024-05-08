@@ -754,6 +754,9 @@ impl LeanEncoding {
                 }
                 res
             }
+            Expression::ELS { .. } => {
+                panic!("ELS not implemented!");
+            }
             _ => {
                 println!("{:?}", expr);
                 unimplemented!();
