@@ -945,7 +945,8 @@ impl InductiveRule {
     pub fn num_recs(&self, inductive: &Inductive) -> usize {
         let mut count = 0;
         for arg in self.ty.params().iter().rev() {
-            if matches!(*arg.top_level_func(), TermData::Ind(ref name) if name == &inductive.name) {
+            if matches!(*arg.body().top_level_func(), TermData::Ind(ref name) if name == &inductive.name)
+            {
                 count += 1;
             } else {
                 break;
@@ -1226,6 +1227,14 @@ pub fn pi_list(terms: &[Term]) -> Term {
     curr
 }
 
+pub fn lam_list(terms: &[Term]) -> Term {
+    let mut curr = terms[terms.len() - 1].clone();
+    for term in terms[..terms.len() - 1].iter().rev() {
+        curr = lam(term.clone(), curr);
+    }
+    curr
+}
+
 pub fn proj(name: String, index: usize, e: Term) -> Term {
     FACTORY.mk(TermData::Proj(name, index, e))
 }
@@ -1488,10 +1497,14 @@ impl Evaluator {
                 binding(*ty, domain_value, body_value)
             }
             TermData::App(f, e) => {
+                let t1_len = typing_context.len();
                 let f_value =
                     self.eval_with_context(f.clone(), context, typing_context, rec, max_depth)?;
+                let t2_len = typing_context.len();
                 let e_value =
                     self.eval_with_context(e.clone(), context, typing_context, rec, max_depth)?;
+                let t3_len = typing_context.len();
+                assert!(t1_len == t2_len && t2_len == t3_len);
 
                 if let TermData::Binding(BindingData {
                     ty: _,
@@ -1526,7 +1539,7 @@ impl Evaluator {
                     self.eval_with_context(expr.clone(), context, typing_context, rec, max_depth)?;
 
                 // Attempt to evaluate it...
-                match &*eval_expr.top_level_func() {
+                let res = match &*eval_expr.top_level_func() {
                     TermData::IndCtor(ind_name, rule_name) if ind_name.starts_with(name) => {
                         let ind = self.inductives.get(ind_name).clone().unwrap_or_else(|| {
                             // cant find inductive...fail
@@ -1550,7 +1563,8 @@ impl Evaluator {
                         args[*index].clone()
                     }
                     _ => proj(name.to_string(), *index, eval_expr),
-                }
+                };
+                res
             }
             _ => term.clone(),
         };
@@ -1580,7 +1594,6 @@ impl Evaluator {
         self.eval_cache.insert(term.clone(), context, res.clone());
         //}
         //}
-
         debug!(
             "\n C = {:?}\n T = {:?}\n |- {:?} => {:?}",
             context, typing_context, term, res
@@ -1663,9 +1676,21 @@ impl Evaluator {
                             .enumerate()
                         {
                             // if recursive, apply the eliminator again...
-                            if let TermData::Ind(ind_name) = &*ty.top_level_func() {
+                            if let TermData::Ind(ind_name) = &*ty.body().top_level_func() {
                                 if ind_name == &inductive.name {
-                                    rec_args.push(app(rec.clone(), rule_args[i].clone()).clone());
+                                    let mut params = rule_args[i].params();
+                                    let ind_args =
+                                        &ty.body().app_args()[inductive.global_params().len()..];
+                                    let rec_lifted =
+                                        self.lift(rec.clone(), params.len() as isize).unwrap();
+                                    let mut motive_app = vec![rec_lifted];
+                                    motive_app.extend(ind_args.iter().cloned());
+                                    motive_app.push(rule_args[i].body().clone());
+                                    let motive_app = app_list(&motive_app);
+                                    params.push(motive_app.clone());
+                                    rec_args.push(lam_list(&params));
+                                    self.ty_with_context(lam_list(&params), typing_context)
+                                        .unwrap();
                                 }
                             }
                         }
@@ -1677,7 +1702,7 @@ impl Evaluator {
                         let elim = app_list(&elim_app);
                         let res = self
                             .eval_with_context(elim.clone(), context, typing_context, true, 1000)
-                            .unwrap();
+                            .expect(&format!("FAILED ELIM for {}: {}", inductive.name, elim));
 
                         return Some(res);
                     }
@@ -1868,12 +1893,12 @@ impl Evaluator {
                         e_ty_value.clone(),
                         context,
                     ) {
-                        //println!("term: {}", term);
-                        //println!("f_ty: {}", f_ty);
-                        //println!("e: {}", e);
-                        //println!("context: {:?}", context);
-                        //println!("e_ty: {}", e_ty);
-                        //println!("domain: {}", domain_value);
+                        println!("term: {}", term);
+                        println!("f_ty: {}", f_ty);
+                        println!("e: {}", e);
+                        println!("context: {:?}", context);
+                        println!("e_ty: {}", e_ty);
+                        println!("domain: {}", domain_value);
                         return Err(format!(
                             "Type mismatch: got {}, expected: {}",
                             e_ty_value, domain_value
