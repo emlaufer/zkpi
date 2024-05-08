@@ -3829,31 +3829,28 @@ impl Exporter {
                                     max_binding,
                                 );
                                 if rule_idx.is_ok() {
-                                    let rule_idx = rule_idx.clone().unwrap();
-                                    let rule = self.get_zk_rule(rule_idx).clone();
-                                    curr_e_res = rule.result_term_idx;
-                                    //let unify_rule_idx = rule_idx.clone().unwrap();
-                                    //let unify_rule = self.get_zk_rule(unify_rule_idx).clone();
+                                    let unify_rule_idx = rule_idx.clone().unwrap();
+                                    let unify_rule = self.get_zk_rule(unify_rule_idx).clone();
 
-                                    //let eval_erule_idx = self.export_eval(
-                                    //    unify_rule.result_term_idx,
-                                    //    HashList::EMPTY,
-                                    //    &mut HashMap::new(),
-                                    //    max_binding,
-                                    //);
-                                    //let eval_erule = self.get_zk_rule(eval_erule_idx);
+                                    let eval_erule_idx = self.export_eval(
+                                        unify_rule.result_term_idx,
+                                        HashList::EMPTY,
+                                        &mut HashMap::new(),
+                                        max_binding,
+                                    );
+                                    let eval_erule = self.get_zk_rule(eval_erule_idx);
 
-                                    //let rule = ExpRule::eval_transitive(
-                                    //    curr_e_res,
-                                    //    eval_erule.result_term_idx,
-                                    //    HashList::EMPTY,
-                                    //    max_binding,
-                                    //    unify_rule_idx,
-                                    //    eval_erule_idx,
-                                    //);
-                                    //let rule_idx = self.add_zk_rule(rule.clone());
+                                    let rule = ExpRule::eval_transitive(
+                                        curr_e_res,
+                                        eval_erule.result_term_idx,
+                                        HashList::EMPTY,
+                                        max_binding,
+                                        unify_rule_idx,
+                                        eval_erule_idx,
+                                    );
+                                    let rule_idx = self.add_zk_rule(rule.clone());
 
-                                    //let curr_e_res = rule.result_term_idx;
+                                    let curr_e_res = rule.result_term_idx;
                                     let e_rule_new = ExpRule::eval_ty(
                                         e,
                                         rule.result_term_idx,
