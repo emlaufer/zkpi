@@ -38,6 +38,7 @@ enum EmbeddedTerm {
 struct ToR1cs {
     r1cs: R1cs<String>,
     cache: TermMap<EmbeddedTerm>,
+    embed: Rc<RefCell<TermSet>>,
     wit_ext: PreComp,
     public_inputs: FxHashSet<String>,
     random_inputs: FxHashSet<String>,
@@ -47,6 +48,10 @@ struct ToR1cs {
     field: FieldT,
     cs: Computation,
     epoch_cache: TermMap<u8>,
+
+    //
+    skip_count: Rc<RefCell<usize>>,
+    term_count: usize,
 }
 
 impl ToR1cs {
@@ -64,6 +69,7 @@ impl ToR1cs {
             r1cs,
             cache: TermMap::new(),
             wit_ext: precomp::PreComp::new(),
+            embed: Default::default(),
             public_inputs,
             random_inputs,
             next_idx: 0,
@@ -72,6 +78,9 @@ impl ToR1cs {
             field,
             cs,
             epoch_cache: TermMap::new(),
+
+            skip_count: Default::default(),
+            term_count: 0,
         }
     }
 
@@ -305,8 +314,18 @@ impl ToR1cs {
     }
 
     fn embed(&mut self, t: Term) {
-        debug!("Embed: {}", Letified(t.clone()));
-        for c in PostOrderIter::new(t) {
+        debug!("Embed: {}", t);
+        let visited_set_rc = self.embed.clone();
+        let skip_count = self.skip_count.clone();
+        for c in extras::PostOrderSkipIter::new(t, &move |s: &Term| {
+            let res = visited_set_rc.borrow().contains(s);
+            if res {
+                *skip_count.borrow_mut() += 1;
+            }
+            res
+        }) {
+            self.term_count += 1;
+            assert!(!self.embed.borrow().contains(&c));
             debug!("Embed op: {}", c.op);
             // Handle field access once and for all
             if let Op::Field(i) = &c.op {
@@ -314,18 +333,19 @@ impl ToR1cs {
                 #[allow(clippy::map_entry)]
                 if !self.cache.contains_key(&c) {
                     let t = self.get_field(&c.cs[0], *i);
+                    self.embed.borrow_mut().insert(c.clone());
                     self.cache.insert(c, t);
                 }
             } else {
                 match check(&c) {
                     Sort::Bool => {
-                        self.embed_bool(c);
+                        self.embed_bool(c.clone());
                     }
                     Sort::BitVector(_) => {
-                        self.embed_bv(c);
+                        self.embed_bv(c.clone());
                     }
                     Sort::Field(_) => {
-                        self.embed_pf(c);
+                        self.embed_pf(c.clone());
                     }
                     Sort::Tuple(_) => {
                         // custom ops?
@@ -333,6 +353,7 @@ impl ToR1cs {
                     }
                     s => panic!("Unsupported sort in embed: {:?}", s),
                 }
+                self.embed.borrow_mut().insert(c.clone());
             }
         }
     }
@@ -966,6 +987,11 @@ pub fn to_r1cs(mut cs: Computation, modulus: FieldT) -> (R1cs<String>, ProverDat
     }
     debug!("r1cs public inputs: {:?}", converter.r1cs.public_idxs,);
     cs.precomputes = cs.precomputes.sequential_compose(&converter.wit_ext);
+    println!(
+        "GOT {} skips and {} non-skips",
+        converter.skip_count.borrow(),
+        converter.term_count
+    );
     let r1cs = converter.r1cs;
     let prover_data = r1cs.prover_data(&cs);
     let verifier_data = r1cs.verifier_data(&cs);

@@ -18,6 +18,7 @@
 use std::ops::AddAssign;
 
 use ff::Field;
+use ff::{PrimeField, PrimeFieldBits};
 use group::{Curve, Group};
 use pairing::{MillerLoopResult, MultiMillerLoop};
 use rand_core::{CryptoRng, RngCore};
@@ -56,7 +57,10 @@ impl<E: MultiMillerLoop> From<(Proof<E>, Vec<E::Fr>)> for Item<E> {
     }
 }
 
-impl<E: MultiMillerLoop> Item<E> {
+impl<E: MultiMillerLoop> Item<E>
+where
+    E::Fr: PrimeFieldBits,
+{
     /// Perform non-batched verification of this `Item`.
     ///
     /// This is useful (in combination with `Item::clone`) for implementing

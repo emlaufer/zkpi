@@ -462,7 +462,7 @@ impl<E: Engine> Parameters<E> {
     }
 }
 
-pub struct PreparedVerifyingKey<E: MultiMillerLoop> {
+pub struct PreparedVerifyingKey<E: MultiMillerLoop + Engine> {
     /// Pairing result of alpha*beta
     alpha_g1_beta_g2: E::Gt,
     /// -gamma in G2

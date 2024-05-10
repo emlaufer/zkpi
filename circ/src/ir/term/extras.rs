@@ -259,6 +259,47 @@ pub fn array_to_tuple(t: &Term) -> Term {
     term(Op::Tuple, array_elements(t))
 }
 
+/// Iterator over descendents in child-first order.
+pub struct PostOrderSkipIter<'a, F: Fn(&Term) -> bool + 'a> {
+    // (cs stacked, term)
+    stack: Vec<(bool, Term)>,
+    visited: TermSet,
+    skip_if: &'a F,
+}
+
+impl<'a, F: Fn(&Term) -> bool + 'a> PostOrderSkipIter<'a, F> {
+    /// Make an iterator over the descendents of `root`.
+    pub fn new(root: Term, skip_if: &'a F) -> Self {
+        Self {
+            stack: vec![(false, root)],
+            visited: TermSet::default(),
+            skip_if,
+        }
+    }
+}
+
+impl<'a, F: Fn(&Term) -> bool + 'a> std::iter::Iterator for PostOrderSkipIter<'a, F> {
+    type Item = Term;
+    fn next(&mut self) -> Option<Term> {
+        while let Some((children_pushed, t)) = self.stack.last() {
+            if self.visited.contains(t) || (self.skip_if)(t) {
+                self.stack.pop();
+            } else if !children_pushed {
+                self.stack.last_mut().unwrap().0 = true;
+                let last = self.stack.last().unwrap().1.clone();
+                self.stack
+                    .extend(last.cs.iter().map(|c| (false, c.clone())));
+            } else {
+                break;
+            }
+        }
+        self.stack.pop().map(|(_, t)| {
+            self.visited.insert(t.clone());
+            t
+        })
+    }
+}
+
 #[cfg(test)]
 mod test {
 

@@ -1,10 +1,16 @@
+use ff::{Field, PrimeField, PrimeFieldBits};
 use group::{prime::PrimeCurveAffine, Curve};
 use pairing::{MillerLoopResult, MultiMillerLoop};
 use std::ops::{AddAssign, Neg};
+use std::sync::Arc;
 
 use super::{PreparedVerifyingKey, Proof, VerifyingKey};
+use crate::multiexp::SourceBuilder;
 
+use crate::multiexp::{multiexp, DensityTracker, FullDensity};
 use crate::VerificationError;
+
+use crate::multicore::Worker;
 
 pub mod batch;
 
@@ -27,7 +33,10 @@ pub fn verify_proof<'a, E: MultiMillerLoop>(
     pvk: &'a PreparedVerifyingKey<E>,
     proof: &Proof<E>,
     public_inputs: &[E::Fr],
-) -> Result<(), VerificationError> {
+) -> Result<(), VerificationError>
+where
+    E::Fr: PrimeFieldBits,
+{
     if (public_inputs.len() + pvk.num_coins + 1) != pvk.ic.len() {
         println!(
             "got {} inputs and {} coins, expect total to be {}",
@@ -54,11 +63,14 @@ pub fn verify_proof<'a, E: MultiMillerLoop>(
 
     let mut acc = pvk.ic[0].to_curve();
 
-    //let all_inputs = [public_inputs, &proof.coins].concat();
-
-    for (i, b) in all_inputs.iter().zip(pvk.ic.iter().skip(1)) {
-        AddAssign::<&E::G1>::add_assign(&mut acc, &(*b * i));
-    }
+    // multiexp the verifier inputs
+    let worker = Worker::new();
+    let input_assignment = Arc::new(all_inputs.iter().map(|s| s.into()).collect::<Vec<_>>());
+    let bases = (Arc::new(pvk.ic[1..].iter().cloned().collect()), 0);
+    let multires: E::G1 = multiexp(&worker, bases, FullDensity, input_assignment.clone())
+        .wait()
+        .unwrap();
+    acc += multires;
 
     // The original verification equation is:
     // A * B = alpha * beta + inputs * gamma + C * delta
