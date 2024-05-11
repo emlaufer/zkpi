@@ -1223,7 +1223,8 @@ def check_terms(ExpTerm[NUM_TERMS] terms) -> bool:
             term.top_level_func == f.top_level_func &&\
             term.argc == f.argc + 1\
         else\
-            term.top_level_func == i\
+            term.top_level_func == i &&\
+            term.argc == 0\
         fi
     endfor
     return res

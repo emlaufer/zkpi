@@ -50,6 +50,17 @@ fn get_eval_parent_res(parent: &ExpRule, expected_input: usize) -> usize {
     }
 }
 
+fn check_expected_binding(parent: &ExpRule, expected_max_binding: usize) -> bool {
+    return if parent.rule == RULE_EVAL_ID
+        || parent.rule == RULE_TYPE_SORT
+        || parent.rule == RULE_EVAL_SORT
+    {
+        true
+    } else {
+        parent.max_binding == expected_max_binding
+    };
+}
+
 fn get_eval_parent_input(parent: &ExpRule, expected_result: usize) -> usize {
     if parent.rule == RULE_EVAL_ID {
         expected_result
@@ -259,6 +270,8 @@ fn check_type_app(
         node.parent1_quot,
         contexts
     ));
+    assert!(check_expected_binding(parent0, node.max_binding));
+    assert!(check_expected_binding(parent1, node.max_binding));
 
     assert!(parent1.result_term_idx == lift_rule.input_term_idx);
     assert!(node.result_term_idx == lift_rule.result_term_idx);
@@ -306,6 +319,8 @@ fn check_type_app_sub(
     //    node.parent1_quot,
     //    contexts
     //));
+    assert!(check_expected_binding(parent0, node.max_binding));
+    assert!(check_expected_binding(parent1, node.max_binding + 1));
 }
 
 // ============================================================================
@@ -346,6 +361,7 @@ fn check_type_lam(node: &ExpRule, proof: &[ExpRule], terms: &[ExpTerm]) {
     assert!(p_B_idx == node_B_idx);
     assert!(p_b_idx == node_b_idx);
 
+    assert!(check_expected_binding(parent0, node.max_binding + 1));
     assert!(input_term.name == node.max_binding);
 }
 
@@ -372,6 +388,7 @@ fn check_type_pi(node: &ExpRule, proof: &[ExpRule], terms: &[ExpTerm], contexts:
     assert!(result_term.kind == EXPR_SORT);
 
     assert!(parent0.rule == RULE_TYPE_PI_SUB);
+    assert!(parent0.ctx_idx == node.ctx_idx);
     assert!(parent0.input_term_idx == input_term.left);
 
     assert!(parent1.input_term_idx == input_term.right);
@@ -379,6 +396,8 @@ fn check_type_pi(node: &ExpRule, proof: &[ExpRule], terms: &[ExpTerm], contexts:
     // ensure node well formed
     assert!(input_term.name == node.max_binding);
     assert!(result_term.name == imax(sort_i.name, sort_j.name));
+    assert!(check_expected_binding(parent0, node.max_binding));
+    assert!(check_expected_binding(parent1, node.max_binding + 1));
 }
 
 // ============================================================================
@@ -418,6 +437,8 @@ fn check_type_pi_sub(node: &ExpRule, proof: &[ExpRule], terms: &[ExpTerm], conte
     ));
     assert!(node.result_term_idx == parent1.result_term_idx);
     assert!(node.extra == parent1.input_term_idx);
+    assert!(check_expected_binding(parent0, node.max_binding));
+    assert!(check_expected_binding(parent1, node.max_binding));
 }
 
 fn check_eval_id(node: &ExpRule, terms: &[ExpTerm]) {
@@ -586,7 +607,8 @@ fn check_eval_pi(
     assert!(is_eval_rule(parent1.rule));
     assert!(check_eval_parent(parent0, pi_p_idx, pi_t_idx));
     assert!(check_eval_parent(parent1, pi_pp_idx, pi_tp_idx));
-
+    assert!(check_expected_binding(parent0, node.max_binding));
+    assert!(check_expected_binding(parent1, node.max_binding + 1));
     assert!(input_term.name == node.max_binding);
 }
 
@@ -634,6 +656,8 @@ fn check_eval_app(node: &ExpRule, proof: &[ExpRule], terms: &[ExpTerm], contexts
     assert!(is_eval_rule(parent1.rule));
     assert!(check_eval_parent(parent0, node_e_idx, node_n_idx));
     assert!(check_eval_parent(parent1, node_ep_idx, node_vp_idx));
+    assert!(check_expected_binding(parent0, node.max_binding));
+    assert!(check_expected_binding(parent1, node.max_binding));
 }
 
 //                            e => v      v:C, b => v'
@@ -678,11 +702,14 @@ fn check_eval_app_lam(
         contexts.to_string(parent0.ctx_idx),
         contexts.to_string(node.parent0_quot)
     );
+    assert!(node.ctx_idx == parent1.ctx_idx);
 
     assert!(parent1.rule == RULE_EVAL_APP_LAM_SUB);
     assert!(parent1.extra == node_e_idx);
     assert!(parent1.input_term_idx == parent0_b_idx);
     assert!(parent1.result_term_idx == node_vpp_idx);
+    assert!(check_expected_binding(parent0, node.max_binding));
+    assert!(check_expected_binding(parent1, node.max_binding));
 }
 
 // collect args
@@ -733,7 +760,8 @@ fn check_eval_app_lam_sub(
     assert!(node_vpp_idx == lift_vpp_idx);
     assert!(check_parent_lift(node, lift));
 
-    //assert!(hah
+    assert!(check_expected_binding(parent0, node.max_binding));
+    assert!(check_expected_binding(parent1, node.max_binding + 1));
 }
 
 // gross but whatever...
@@ -749,6 +777,8 @@ fn check_eval_transitive(node: &ExpRule, proof: &[ExpRule], terms: &[ExpTerm]) {
     let parent0_res = get_eval_parent_res(parent0, node.input_term_idx);
     let parent1_inp = get_eval_parent_input(parent1, node.result_term_idx);
     assert!(check_eval_parent(parent0, node.input_term_idx, parent1_inp));
+    assert!(check_expected_binding(parent0, node.max_binding));
+    assert!(check_expected_binding(parent1, node.max_binding));
     assert!(check_eval_parent(
         parent1,
         parent0_res,
@@ -1063,6 +1093,8 @@ fn check_proof_irrel_sub1(
 
     assert!(result_term.kind == EXPR_SORT);
     assert!(result_term.name == 0);
+    assert!(check_expected_binding(parent0, node.max_binding));
+    assert!(check_expected_binding(parent1, node.max_binding));
 }
 
 //  a :: T   b :: T   T :: Prop
@@ -1085,6 +1117,8 @@ fn check_proof_irrel(
     assert!(parent0.input_term_idx == node.input_term_idx);
     assert!(parent0.result_term_idx == parent1.extra);
     assert!(parent1.input_term_idx == node.result_term_idx);
+    assert!(check_expected_binding(parent0, node.max_binding));
+    assert!(check_expected_binding(parent1, node.max_binding));
 }
 
 // TODO: ensure contexts correct here...
@@ -1116,6 +1150,9 @@ fn check_eval_type(
 
     assert!(check_eval_parent(parent1, p0_T_idx, node_Tp_idx));
     assert!(node_a_idx == p0_a_idx);
+    assert!(parent1.ctx_idx == EMPTY_CONTEXT_IDX);
+    assert!(check_expected_binding(parent0, node.max_binding));
+    assert!(check_expected_binding(parent1, node.max_binding));
 }
 
 // TODO: move
@@ -1280,6 +1317,7 @@ fn check_eval_proj(
     // TODO: refactor oportunity...using parent0.result_term.top_level_func adds a lot of overhead...
     let parent0_res = get_eval_parent_res(parent0, input_term.left);
     assert!(check_eval_parent(parent0, input_term.left, parent0_res));
+    assert!(check_expected_binding(parent0, node.max_binding));
     let evaled_input_term = &terms[parent0_res];
     let input_tlf = &terms[evaled_input_term.top_level_func];
 
@@ -1412,6 +1450,7 @@ fn check_eval_proj_simpl(
 
     assert!(input_term.kind == EXPR_PROJ);
     assert!(result_term.kind == EXPR_PROJ);
+    assert!(check_expected_binding(parent0, node.max_binding));
     assert!(is_eval_rule(parent0.rule));
     assert!(check_eval_parent(
         parent0,
@@ -1444,6 +1483,7 @@ fn check_type_proj(node: &ExpRule, proof: &[ExpRule], terms: &[ExpTerm]) {
         parent1_inp_idx,
         node.result_term_idx
     ));
+    assert!(check_expected_binding(parent1, node.max_binding));
     assert!(parent1_inp.kind == EXPR_PROJ);
     assert!(parent1_inp.left == parent0.result_term_idx);
     assert!(parent1_inp.index == input_term.index);
@@ -1454,9 +1494,26 @@ fn check_terms(terms: &[ExpTerm]) {
         let term = &terms[i];
         let f = &terms[term.left];
         if term.kind == EXPR_APP {
-            assert!(term.top_level_func == f.top_level_func);
-            assert!(term.argc == f.argc + 1);
+            assert!(
+                term.top_level_func == f.top_level_func,
+                "GOT: {:?} {:?} {:?} {:?} {}",
+                term,
+                f,
+                term.argc,
+                f.argc,
+                i
+            );
+            assert!(
+                term.argc == f.argc + 1,
+                "GOT: {:?} {:?} {:?} {:?} {}",
+                term,
+                f,
+                term.argc,
+                f.argc,
+                i
+            );
         } else {
+            assert!(term.argc == 0);
             assert!(term.top_level_func == i);
         }
     }
@@ -1495,7 +1552,7 @@ pub fn simulate(
 
     // TODO: axiom hash map....
 
-    //check_terms(terms);
+    check_terms(terms);
     check_axioms(public_terms, terms);
 
     if check_res {
@@ -1511,6 +1568,8 @@ pub fn simulate(
             ),
         );
     }
+    assert!(is_type_rule(proof[proving_rule].rule));
+    assert!(proof[proving_rule].ctx_idx == EMPTY_CONTEXT_IDX);
 
     for i in 0..input.lifts.len() {
         let lift = &lifts[i];

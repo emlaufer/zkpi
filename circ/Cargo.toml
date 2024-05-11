@@ -103,8 +103,9 @@ name = "opa_bench"
 required-features = ["lp"]
 
 [profile.release]
-debug = true
-rustflags = ["-C", "force-frame-pointers=y"]
+#debug = true
+#rustflags = ["-C", "force-frame-pointers=y"]
+lto = true
 
 [profile.dev]
 debug = true

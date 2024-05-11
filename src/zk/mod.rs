@@ -124,9 +124,15 @@ impl ExpTerm {
         ExpTerm::new(EXPR_PI, name, domain, body, 0, 0, 0)
     }
 
-    pub fn app(f: usize, e: usize, top_level_func: usize) -> ExpTerm {
+    pub fn app(f: usize, e: usize, top_level_func: usize, exporter: &Exporter) -> ExpTerm {
         let mut res = ExpTerm::new(EXPR_APP, 0, f, e, 0, 0, 0);
-        res.top_level_func = top_level_func;
+        let f_term = exporter.get_zk_term(f);
+        if f_term.kind == EXPR_APP {
+            res.top_level_func = f_term.top_level_func;
+        } else {
+            res.top_level_func = f;
+        }
+        res.argc = exporter.get_zk_term(f).argc + 1;
         res
     }
 
@@ -2733,7 +2739,7 @@ impl Exporter {
             )?;
             let fp = self.get_zk_rule(parent0_idx).result_term_idx;
             let fp_tlf = self.get_zk_term(fp).top_level_func;
-            let result_term = ExpTerm::app(fp, e, fp_tlf);
+            let result_term = ExpTerm::app(fp, e, fp_tlf, self);
             let result_idx = self.add_zk_term(result_term);
 
             // let parent1_idx =
@@ -2775,7 +2781,7 @@ impl Exporter {
             )?;
             let fp = self.get_zk_rule(parent0_idx).result_term_idx;
             let fp_tlf = self.get_zk_term(fp).top_level_func;
-            let result_term = ExpTerm::app(fp, e, fp_tlf);
+            let result_term = ExpTerm::app(fp, e, fp_tlf, self);
             let result_idx = self.add_zk_term(result_term);
 
             // let parent1_idx =
@@ -2833,10 +2839,10 @@ impl Exporter {
             let fp = self.get_zk_rule(parent0_idx).result_term_idx;
             let fp_tlf = self.get_zk_term(fp).top_level_func;
 
-            let app_rec_e = ExpTerm::app(rec_idx, e, rec_idx);
+            let app_rec_e = ExpTerm::app(rec_idx, e, rec_idx, self);
             let app_rec_e_idx = self.add_zk_term(app_rec_e);
 
-            let app_fp_rec = ExpTerm::app(fp, app_rec_e_idx, fp_tlf);
+            let app_fp_rec = ExpTerm::app(fp, app_rec_e_idx, fp_tlf, self);
             let result_idx = self.add_zk_term(app_fp_rec);
 
             // TODO:
@@ -2969,7 +2975,8 @@ impl Exporter {
                     }
                     EXPR_APP => {
                         let tlf = self.get_zk_term(left.result_term_idx).top_level_func;
-                        let res = ExpTerm::app(left.result_term_idx, right.result_term_idx, tlf);
+                        let res =
+                            ExpTerm::app(left.result_term_idx, right.result_term_idx, tlf, self);
                         let res_idx = self.add_zk_term(res);
                         ExpRule::eval_app(
                             input_idx,
@@ -3457,7 +3464,7 @@ impl Exporter {
                 } else {
                     let e_term = self.get_zk_term(e_result);
                     //let min_binding = min(f_term.min_binding, e_term.min_binding);
-                    let zk_result = ExpTerm::app(f_result, e_result, f_term.top_level_func);
+                    let zk_result = ExpTerm::app(f_result, e_result, f_term.top_level_func, self);
                     let result_idx = self.add_zk_term(zk_result);
 
                     ExpRule::eval_app(
@@ -4183,6 +4190,7 @@ impl Exporter {
                 parent0_rule.result_term_idx,
                 input_term.right,
                 inductive.projector,
+                self,
             );
             let app_idx = self.add_zk_term(app_term);
             let rule =
@@ -4231,7 +4239,7 @@ impl Exporter {
         let parent1 = self.export_walk_proj(parent0_rule.result_term_idx, inductive, max_binding);
         let parent1_rule = self.get_zk_rule(parent1);
 
-        let result_term = ExpTerm::app(parent1_rule.result_term_idx, input_idx, max_binding);
+        let result_term = ExpTerm::app(parent1_rule.result_term_idx, input_idx, max_binding, self);
         let result_term_idx = self.add_zk_term(result_term);
 
         let rule = ExpRule::ctor_proj(
@@ -4331,7 +4339,7 @@ impl Exporter {
                 let e_idx = self.export_lift(input.right, max_binding, min_binding_seen, rule_type);
                 let e_result = self.get_zk_lift(e_idx).result_term_idx;
 
-                let result = ExpTerm::app(f_result, e_result, f_term.top_level_func);
+                let result = ExpTerm::app(f_result, e_result, f_term.top_level_func, self);
                 let result_idx = self.add_zk_term(result);
 
                 ExpLift::lift(
@@ -4592,7 +4600,7 @@ impl Exporter {
                 let f_term = self.get_zk_term(f_idx).clone();
                 let e_idx = self.export_term(e.clone(), num_bindings);
 
-                ExpTerm::app(f_idx, e_idx, f_term.top_level_func)
+                ExpTerm::app(f_idx, e_idx, f_term.top_level_func, self)
             }
             TermData::Axiom(name) => {
                 // TODO: inductives and inductive rules....
