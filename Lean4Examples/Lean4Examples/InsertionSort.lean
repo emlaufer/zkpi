@@ -274,7 +274,6 @@ by
                               let h5 := subset_cons h4 h2
                               exact subset_reorder_s h5
 
-#print List.rec
 def insert_sorted_correct (x : Nat) (l : List Nat) (h: sorted l) : sorted (insert_sorted x l) :=
   @List.recOn Nat (fun l => (∀ (h: sorted l), sorted (insert_sorted x l))) l 
     (λ h: sorted [] => trivial)
