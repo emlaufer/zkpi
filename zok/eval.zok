@@ -768,8 +768,6 @@ def check_eval_ind_sub1(ExpRule node, ExpRule[PROOF_SIZE] proof, ExpTerm[NUM_TER
     ExpInd inductive = inductives[node.inductive]
     field ind_rule_index = node.ind_rule
 
-    // TODO: check f is ind elim
-
     bool res = parent1.rule == RULE_GET_ARG
     res = res && parent1.extra == inductive.elim_argc - (inductive.num_params + ind_rule_index + 2)
 
@@ -803,11 +801,10 @@ def check_eval_ind_sub2(ExpRule node, ExpRule[PROOF_SIZE] proof, ExpTerm[NUM_TER
 
     return res
 
-//  f => f' (f' is ind_elim) (f' has enough args) (TODO) e => e' (e' is ind_i) (e' :: Ind) (get_arg f (ty_args + 1 + i) => e_i) (elim_apply_eval nnr nr e_i e => e'')
+//  f => f' (f' is ind_elim) (f' has enough args) e => e' (e' is ind_i) (e' :: Ind) (get_arg f (ty_args + 1 + i) => e_i) (elim_apply_eval nnr nr e_i e => e'')
 // ------------------------------------------------------------------------------------------------------------------------------------------------
 //                                                       C |- f e => e''
 def check_eval_ind(ExpRule node, ExpRule[PROOF_SIZE] proof, ExpTerm[NUM_TERMS] terms, ExpInd[NUM_INDS] inductives) -> bool:
-    // TODO: finish this
     ExpTerm input_term = terms[node.input_term_idx]
     ExpTerm result_term = terms[node.result_term_idx]
 
@@ -826,7 +823,6 @@ def check_eval_ind(ExpRule node, ExpRule[PROOF_SIZE] proof, ExpTerm[NUM_TERMS] t
     res = res && parent1.extra2 == parent0.result_term_idx
 
     return res
-    // TODO: check contexts....
 
 // ---------------------
 //  0)|- f e => e
