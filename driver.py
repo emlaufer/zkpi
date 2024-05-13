@@ -103,11 +103,10 @@ print('Running oneshot zkpi proof')
 
 circ_exe = os.path.abspath(args.circ_exe)
 os.chdir(args.circuit_directory)
-p = subprocess.Popen([circ_exe, '--language', 'Zsharp', 'eval.zok', 'r1cs', '--proof-system', 'mirage', '--action', 'oneshot', '--inputs', "{}.pin".format(args.theorem_name)], stdout=subprocess.PIPE)
+p = subprocess.Popen([circ_exe, '--language', 'Zsharp', 'eval.zok', 'r1cs', '--proof-system', 'mirage', '--action', 'oneshot', '--inputs', "{}.pin".format(args.theorem_name)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 while p.poll() is None:
-    l = p.stdout.readline()
+    l = p.stdout.readline().decode("utf-8").strip()
     print(l)
-print(p.stdout.decode("utf-8"))
 
 # cleanup
 if not args.no_cleanup:

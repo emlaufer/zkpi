@@ -66,9 +66,3 @@ struct ExpTerm {
     field ax
     field index // for Proj
 }
-
-
-def check_terms(ExpTerm[NUM_TERMS] terms) -> bool:
-    // TODO:
-    return true
-

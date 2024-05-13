@@ -1,12 +1,12 @@
 
-const field PROOF_SIZE = 404
-const field NUM_TERMS = 796
-const u32 CONTEXT_SIZE = 129
-const field NUM_LIFTS = 970
-const field NUM_INDS = 6
-const field NUM_PUB_TERMS = 150
-const field NUM_RULES = 14
-const field NUM_NNRS = 11
-const field NUM_NRS = 9
+const field PROOF_SIZE = 5852
+const field NUM_TERMS = 5701
+const u32 CONTEXT_SIZE = 1277
+const field NUM_LIFTS = 14580
+const field NUM_INDS = 10
+const field NUM_PUB_TERMS = 315
+const field NUM_RULES = 20
+const field NUM_NNRS = 9
+const field NUM_NRS = 6
 const field NUM_AXIOMS = 1
 

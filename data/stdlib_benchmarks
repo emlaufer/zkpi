@@ -37,7 +37,7 @@ Char.isValidChar_of_isValidChar_Nat
 _auto._.Init.Control.Lawful._hyg.1733
 Unit
 Nat.nextPowerOfTwo.proof_1
-_private.Init.Omega.Constraint.0.Lean.Omega.Constraint.sat'._eq_1
+_private.Init.Omega.Constraint.0.Lean.Omega.Constraint.sat\'._eq_1
 Lean.MonadQuotation.recOn
 String.Iterator.extract
 ULift._sizeOf_1
@@ -76,12 +76,12 @@ Nat.SOM.Expr.add.injEq
 ShareCommon.StateFactoryBuilder.mapInsert
 Lean.Module.casesOn
 Nat.allM.loop
-Lean.Omega.IntList.gcd_cons_div_right'
+Lean.Omega.IntList.gcd_cons_div_right\'
 Option.toList
 _private.Init.Meta.0.Lean.Syntax.reprSyntax._.Init.Meta._hyg.3436
 String.utf8SetAux
 List.head
-Nat.le_sub_iff_add_le'
+Nat.le_sub_iff_add_le\'
 ExceptT.run_bind.match_1
 ShareCommon.StateFactoryBuilder.setFind
 Fin.castSucc_lt_succ
@@ -115,7 +115,7 @@ Classical.inhabited_of_nonempty
 Int.emod_lt_of_pos
 Lean.Parser.Syntax.exact
 Nat.repr
-not_and'
+not_and\'
 String.Pos.mk.sizeOf_spec
 Fin.natAdd
 Not.intro
@@ -163,7 +163,7 @@ Lean.NameGenerator._sizeOf_1
 List.drop.match_1
 Lean.Parser.Tactic.inductionAlt
 Lean.termMacro
-Nat.add_sub_cancel'
+Nat.add_sub_cancel\'
 Lean.Omega.IntList.sub_eq_add_neg
 String.utf8SetAux_of_gt.match_1
 Nat.Linear.Expr.of_cancel_lt
@@ -443,7 +443,7 @@ Subtype.sizeOf
 FloatArray.instForInFloatArrayFloat
 Decidable.not_imp_comm
 Nat.lt_min
-forall_congr'
+forall_congr\'
 String.takeRightWhile
 BitVec.extractLsb_toNat
 BitVec.term__
@@ -519,11 +519,11 @@ Int.mul_emod_left
 instInhabitedForInStep
 List.append_cancel_left_eq
 BitVec.getMsb
-Decidable.or_congr_left'
+Decidable.or_congr_left\'
 Array.sequenceMap
 Init.Data.Fin.Lemmas._auxLemma.36
 Lean.MonadRef.mkInfoFromRefPos
-Lean.Parser.Tactic.refine'
+Lean.Parser.Tactic.refine\'
 Lean.Name.mkStr6
 IO.Ref
 Array.push
@@ -531,7 +531,7 @@ Lean.Parser.Tactic.discharger
 Std.Format.noConfusion
 Int.mul_ediv_self_le
 Lean.Data.AC.Expr._sizeOf_1
-iff_def'
+iff_def\'
 UInt32._sizeOf_1
 String.extract.go₂
 IO.currentDir
@@ -611,7 +611,7 @@ term_
 term_
 and_congr_left_eq
 List.foldrM_cons
-Nat.add_lt_of_lt_sub'
+Nat.add_lt_of_lt_sub\'
 Bool.xor_left_comm
 term_
 FloatArray.instInhabitedFloatArray
@@ -656,7 +656,7 @@ Float.log
 Std.Format.prefixJoin.match_1
 Int.lt_iff_le_and_ne
 List.getLast
-Nat.sub_le_iff_le_add'
+Nat.sub_le_iff_le_add\'
 List.isPrefixOf_nil_left
 Std.Queue.enqueueAll
 Lean.Parser.colonEqD
@@ -925,7 +925,7 @@ Or.elim
 Setoid.iseqv
 Lean.Syntax.instReprTSyntax
 UInt8.decLt
-List.forM_nil'
+List.forM_nil\'
 Lean.unifConstraint
 Lean.Parser.Tactic.Conv.simpMatch
 Ordering.isEq
@@ -962,7 +962,7 @@ Int.le_min
 Bool.instDecidableExistsBool.match_2
 List.getLast.match_1
 Lean.Syntax.node.inj
-BitVec.toNat_zeroExtend'
+BitVec.toNat_zeroExtend\'
 Sigma._sizeOf_1
 Init.Data.Fin.Lemmas._auxLemma.13
 IO.Error.mkAlreadyExistsFile
@@ -994,7 +994,7 @@ Classical.not_forall_not
 FloatArray.recOn
 Lean.Omega.Coeffs.findIdx
 IO.FS.Stream.Buffer.data
-Nat.pow_mul'
+Nat.pow_mul\'
 Nat.Linear.Expr.eq_of_toNormPoly_eq
 Lean.Omega.Int.ofNat_sub_dichotomy
 TC.wf

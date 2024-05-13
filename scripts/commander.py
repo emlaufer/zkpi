@@ -18,8 +18,8 @@ import csv
 import pandas as pd
 
 # CHANGE STRING TO DO EITHER MATHLIB OR STDLIB
-username = "USERNAME"
-library = "stdlib"
+username = "evan"
+library = "mathlib"
 
 class Binary(object):
     path: str
@@ -93,7 +93,6 @@ parser.add_argument(
     help="Where to write the output CSV to",
     default="out.csv",
 )
-parser.add_argument("--user", metavar="USERNAME", default=os.getenv("USER"))
 
 args = parser.parse_args()
 
@@ -105,14 +104,16 @@ with open(args.hosts) as f:
 free_machines = queue.Queue()
 [free_machines.put(m) for m in machines]
 results = queue.Queue()
+
 def run_thread(thm_name, vm_name):
     thm_name = thm_name.replace("'", "\\'")
     try:
         out = sub.run(
-            [f"gcloud compute ssh --zone us-west1-b --project gcp-zkpi {}@{} -- \"cd crabpi; ./driver.py -e {library}.out --time {}\"".format(username, vm_name, thm_name)], timeout=1800, stderr=sub.PIPE, stdout=sub.PIPE, input="", shell=True
+            [f"gcloud compute ssh --zone us-west1-b --project gcp-zkpi {username}@{vm_name} -- \"cd crabpi; ./driver.py -e Lean4Examples/{library}.out --circ-exe circ/target/release/examples/circ --time {thm_name}\""], timeout=1800, stderr=sub.PIPE, stdout=sub.PIPE, input="", shell=True
         )
-        #print("running: ", out.args)
+        print("running: ", out.args)
         outstr = out.stdout
+        print(outstr)
 
         r1cs = search_or_default(b"Final R1cs size: (\d*)", outstr, -1)
         simplify_time = search_or_default(b"Simplify/Export time: (\d*)", outstr, -1)
@@ -127,7 +128,7 @@ def run_thread(thm_name, vm_name):
             ret_code = -1234 # inductive fams
         elif "Quot" in str(outstrstr):
             ret_code = -1235 # quot sound
-        elif "quotient" in str(outstrstr):
+        elif "Quotient" in str(outstrstr):
             ret_code = -1235
         elif "eta unsupported" in str(outstrstr):
             ret_code = -1236 # eta expansion
@@ -135,6 +136,8 @@ def run_thread(thm_name, vm_name):
             ret_code = -1237
         elif "Gigantic NAT..." in str(outstrstr):
             ret_code = -1238
+        elif "ELS not impl" in str(outstrstr):
+            ret_code = -1239
         else:
             ret_code = out.returncode
 
@@ -160,27 +163,45 @@ def run_thread(thm_name, vm_name):
         return
     free_machines.put(vm_name)
     results.put([thm_name, r1cs, simplify_time, compile_time, gen_time, precompute_time, prove_time, verify_time, ret_code])
-username = args.user
 
 print(f"{len(machines)} machines")
-#thms = pd.read_csv(args.thms)
-done = pd.read_csv(f"{library}_times_new_complete.csv")
-rerun = done[(done.returncode == 1) | (done.returncode == -1237)] 
-#print(rerun)
+thms = pd.read_csv(args.thms, header=None)
+thms = list(thms[0])
+#print(list(thms[0]))
+done = pd.read_csv(f"{library}_times_lean4_nat3.csv")
+thms = list(pd.Series(thms)[~pd.Series(thms).isin(done["name"])])
+rerun = done[(done.returncode == 101)] 
+print(rerun)
 #done = done[done["name"].str.contains("'")]
 #thms = list(done["name"])
-thms = list(rerun["name"])
+#thms = list(rerun["name"])
 #merged = thms.merge(done, on="name", how="left", indicator=True)
 #thms = list(merged[merged["_merge"] == "left_only"]["name"])
 #done = pd.read_csv("stdlib_times_downsampled.csv")
-thms.reverse()
-print(thms)
+#thms.reverse()
+#print(thms)
 ###thms = thms.sample(1000)
 ###thms = thms.sort_values("size")
 ###thms.to_csv("../mathlib_downsampled.csv")
 ###print(thms)
 ##
-outfile = open(f"{library}_times_new_rerunquot.csv", "w+")
+
+def update_binary(machine):
+    out = sub.run(
+        [f"gcloud compute ssh --zone us-west1-b --project gcp-zkpi {username}@{machine} -- \"cd crabpi; git pull; cargo build --release\""], timeout=1800, stderr=sub.PIPE, stdout=sub.PIPE, input="", shell=True
+    )
+
+threads = []
+for machine in machines:
+    print("Update Machine:", machine)
+    t = threading.Thread(target=update_binary, args=[machine])
+    t.start()
+    threads.append(t)
+
+for t in threads:
+    t.join()
+#
+outfile = open(f"{library}_times_lean4_nat4.csv", "w+")
 writer = csv.writer(outfile)
 writer.writerow(["name","r1cs_size","simplify_time","compile_time","gen_time","precompute_time","prove_time","verify_time","returncode"])
 

@@ -1,6 +1,6 @@
 from "EMBED" import u32_to_field, field_to_u8, get_field_size, u8_from_bits
 from "meta.zok" import PROOF_SIZE, NUM_TERMS, CONTEXT_SIZE, NUM_LIFTS, NUM_INDS, NUM_PUB_TERMS, NUM_RULES, NUM_NNRS, NUM_NRS, NUM_AXIOMS
-from "structs.zok" import ExpRule, ExpTerm, ExpLift, ExpInd, MAX_RULES, check_terms
+from "structs.zok" import ExpRule, ExpTerm, ExpLift, ExpInd, MAX_RULES 
 from "hashlist.zok" import HashLists, HashNode, hash_list_well_formed, hash_list_permutation, hash_list_popped, hash_list_subset, hash_list_contains, get_hash, compute_hashes, hash_list_subset_push,hash_list_contains2, hash_list_subset_push2, hash_list_subset2, hash_list_singleton
 from "constants.zok" import EXPR_NULL, EXPR_VAR, EXPR_SORT, EXPR_APP, EXPR_LAM, \
                             EXPR_PI, EXPR_AX, EXPR_IND, EXPR_IND_CTOR, EXPR_IND_REC, EXPR_PROJ, EXPR_PROJ_PLACEHOLDER, RULE_NULL, \
