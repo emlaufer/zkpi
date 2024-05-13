@@ -576,7 +576,11 @@ pub struct VerifierData {
 
 impl VerifierData {
     /// Given verifier inputs, compute a vector of integers to feed to the proof system.
-    pub fn eval(&self, value_map: &HashMap<String, Value>, drop: &HashSet<String>) -> Vec<rug::Integer> {
+    pub fn eval(
+        &self,
+        value_map: &HashMap<String, Value>,
+        drop: &HashSet<String>,
+    ) -> Vec<rug::Integer> {
         for (input, (sort, _epoch)) in &self.precompute_inputs {
             if !self.random_coins.contains(input) {
                 let value = value_map
@@ -593,9 +597,7 @@ impl VerifierData {
         let new_map = self.precompute.eval(value_map);
         self.pf_input_order
             .iter()
-            .filter(|input| {
-                !drop.contains(input.as_str())
-            })
+            .filter(|input| !drop.contains(input.as_str()))
             .map(|input| {
                 new_map
                     .get(input)

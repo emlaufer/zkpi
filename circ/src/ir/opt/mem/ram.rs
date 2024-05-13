@@ -617,11 +617,10 @@ impl<'a> Extactor<'a> {
 
     fn rewrite_indices(&mut self) {
         // TODO: try to optimize this?
-        let mut cache = TermMap::new();
         let mut rams: Vec<Ram> = self.rams.drain(0..).collect();
         for ram in &mut rams {
             for access in &mut ram.accesses {
-                access.idx = self.rewrite_index_term(access.idx.clone(), &mut cache);
+                access.idx = self.rewrite_index_term(access.idx.clone());
             }
         }
         self.rams = rams;
@@ -629,7 +628,7 @@ impl<'a> Extactor<'a> {
 
     /// Rewrite a single index term recursivly. Uses the cache if we have already
     /// seen this term before
-    fn rewrite_index_term(&self, t: Term, cache: &mut TermMap<Term>) -> Term {
+    fn rewrite_index_term(&mut self, t: Term) -> Term {
         if self.read_terms.contains_key(&t) {
             return self.read_terms.get(&t).unwrap().clone();
         }
@@ -637,10 +636,10 @@ impl<'a> Extactor<'a> {
         // rewrite all children
         let mut rewritten_children = Vec::new();
         for c in &t.get().cs {
-            rewritten_children.push(self.rewrite_index_term(c.clone(), cache));
+            rewritten_children.push(self.rewrite_index_term(c.clone()));
         }
         let res = term(t.get().op.clone(), rewritten_children);
-        cache.insert(t, res.clone());
+        self.read_terms.insert(t, res.clone());
         res
     }
 }

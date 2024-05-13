@@ -63,6 +63,7 @@ use crate::ir::term::{
     bv_lit, check, leaf_term, term, Array, Computation, Op, PostOrderIter, Sort, Term, TermMap,
     Value, AND,
 };
+use im::OrdMap;
 use std::collections::BTreeMap;
 
 use itertools::zip_eq;
@@ -237,7 +238,7 @@ fn untuple_value(v: &Value) -> Value {
                 .into_iter()
                 .rev()
                 .map(|d| {
-                    let mut submap: BTreeMap<Value, Value> = BTreeMap::new();
+                    let mut submap: OrdMap<Value, Value> = OrdMap::new();
                     for (k, v) in &mut map {
                         submap.insert((**k).clone(), v.pop().unwrap());
                     }

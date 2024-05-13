@@ -35,6 +35,8 @@ use std::fmt::{self, Debug, Display, Formatter};
 use std::iter::FromIterator;
 use std::sync::{Arc, RwLock};
 
+use im::OrdMap;
+
 pub mod bv;
 pub mod dist;
 pub mod extras;
@@ -785,7 +787,7 @@ pub struct Array {
     /// Default (fill) value. What is stored when a key is missing from the next member
     pub default: Box<Value>,
     /// Key-> Value map
-    pub map: BTreeMap<Value, Value>,
+    pub map: OrdMap<Value, Value>,
     /// Size of array. There are this many valid keys.
     pub size: usize,
 }
@@ -795,7 +797,7 @@ impl Array {
     pub fn new(
         key_sort: Sort,
         default: Box<Value>,
-        map: BTreeMap<Value, Value>,
+        map: OrdMap<Value, Value>,
         size: usize,
     ) -> Self {
         if key_sort.default_value().as_usize().is_none() {
