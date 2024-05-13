@@ -9,3 +9,4 @@ MathlibTests
 mathlib.out
 
 */**/*.pin
+zok/meta.zok
