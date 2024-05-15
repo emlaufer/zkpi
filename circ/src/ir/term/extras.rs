@@ -287,8 +287,13 @@ impl<'a, F: Fn(&Term) -> bool + 'a> std::iter::Iterator for PostOrderSkipIter<'a
             } else if !children_pushed {
                 self.stack.last_mut().unwrap().0 = true;
                 let last = self.stack.last().unwrap().1.clone();
-                self.stack
-                    .extend(last.cs.iter().map(|c| (false, c.clone())));
+                let test = self.skip_if.clone();
+                let to_push = last
+                    .cs
+                    .iter()
+                    .filter(|c| !(test)(c))
+                    .map(|c| (false, c.clone()));
+                self.stack.extend(to_push);
             } else {
                 break;
             }

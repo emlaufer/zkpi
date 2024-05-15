@@ -64,7 +64,10 @@ use crate::ir::term::{
     Value, AND,
 };
 use im::OrdMap;
+use std::borrow::BorrowMut;
+use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::rc::Rc;
 
 use itertools::zip_eq;
 
@@ -259,11 +262,13 @@ fn tuple_free(t: Term) -> bool {
 
 /// Run the tuple elimination pass.
 pub fn eliminate_tuples(cs: &mut Computation) {
-    let mut lifted: TermMap<TupleTree> = TermMap::new();
-    for t in cs.terms_postorder() {
+    let mut lifted: Rc<RefCell<TermMap<TupleTree>>> = Rc::new(RefCell::new(TermMap::new()));
+    let lifted_rc = lifted.clone();
+
+    for t in cs.terms_postorder_skip(&move |c| lifted_rc.borrow().contains_key(c)) {
         let mut cs: Vec<TupleTree> =
             t.cs.iter()
-                .map(|c| lifted.get(c).unwrap().clone())
+                .map(|c| lifted.borrow().get(c).unwrap().clone())
                 .collect();
         let new_t = match &t.op {
             Op::Const(v) => termify_val_tuples(untuple_value(v)),
@@ -317,11 +322,11 @@ pub fn eliminate_tuples(cs: &mut Computation) {
             )),
         };
         assert_eq!(expected_sort(&check(&t)), new_t.sort());
-        lifted.insert(t, new_t);
+        (*lifted).borrow_mut().insert(t, new_t);
     }
     cs.outputs = std::mem::take(&mut cs.outputs)
         .into_iter()
-        .flat_map(|o| lifted.get(&o).unwrap().clone().flatten())
+        .flat_map(|o| lifted.borrow().get(&o).unwrap().clone().flatten())
         .collect();
     #[cfg(debug_assertions)]
     for o in &cs.outputs {

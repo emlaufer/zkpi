@@ -66,7 +66,11 @@ pub fn fold_cache(node: &Term, cache: &mut TermCache<TTerm>, ignore: &[Op]) -> T
         }
         if !children_pushed {
             stack.push((t.clone(), true));
-            stack.extend(t.cs.iter().map(|c| (c.clone(), false)));
+            stack.extend(
+                t.cs.iter()
+                    .filter(|c| !cache.contains(&c.to_weak()))
+                    .map(|c| (c.clone(), false)),
+            );
             continue;
         }
 

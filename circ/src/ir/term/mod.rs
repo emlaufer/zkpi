@@ -45,6 +45,7 @@ pub mod text;
 pub mod ty;
 
 pub use bv::BitVector;
+use extras::PostOrderSkipIter;
 pub use ty::{check, check_rec, TypeError, TypeErrorReason};
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -2718,6 +2719,13 @@ impl Computation {
         // drop the top-level tuple term.
         terms.pop();
         terms.into_iter()
+    }
+
+    pub fn terms_postorder_skip<'a, F: Fn(&Term) -> bool + 'a>(
+        &self,
+        f: &'a F,
+    ) -> impl Iterator<Item = Term> + 'a {
+        PostOrderSkipIter::new(term(Op::Tuple, self.outputs.clone()), f)
     }
 }
 

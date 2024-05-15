@@ -1,6 +1,8 @@
 //! Flatten terms
 
 use crate::ir::term::*;
+use fxhash::{FxHashMap, FxHashSet};
+use std::hash::Hash;
 use std::rc::Rc;
 
 #[derive(Clone)]
@@ -11,24 +13,47 @@ enum Entry {
 
 type L<T> = Rc<PersistentConcatList<T>>;
 
+#[derive(Eq, PartialEq, Hash)]
 enum PersistentConcatList<T> {
     Leaf(Rc<T>),
     Concat(Vec<L<T>>),
 }
 
-impl<T: Clone> PersistentConcatList<T> {
+impl<T: Clone + Eq + Hash> PersistentConcatList<T> {
     fn as_vec(this: L<T>) -> Vec<T> {
-        let mut v = Vec::new();
-        let mut stack = vec![this];
-        while let Some(t) = stack.pop() {
-            match &*t {
-                PersistentConcatList::Leaf(t) => v.push((**t).clone()),
-                PersistentConcatList::Concat(ts) => {
-                    ts.iter().for_each(|c| stack.push(c.clone()));
-                }
+        //let mut v = Vec::new();
+        let mut stack = vec![(this.clone(), false)];
+        let mut rewritten_children: FxHashMap<L<T>, Vec<T>> = FxHashMap::default();
+        while let Some((t, children_pushed)) = stack.pop() {
+            if rewritten_children.contains_key(&t) {
+                continue;
             }
+            if !children_pushed {
+                stack.push((t.clone(), true));
+                match &*t {
+                    PersistentConcatList::Concat(ts) => {
+                        stack.extend(
+                            ts.iter()
+                                .filter(|c| !rewritten_children.contains_key(&**c))
+                                .map(|c| (c.clone(), false)),
+                        );
+                    }
+                    _ => {}
+                }
+                continue;
+            }
+            let res = match &*t {
+                PersistentConcatList::Leaf(t) => vec![(**t).clone()],
+                PersistentConcatList::Concat(ts) => ts
+                    .iter()
+                    .map(|c| &rewritten_children[c])
+                    .flatten()
+                    .cloned()
+                    .collect(),
+            };
+            rewritten_children.insert(t, res);
         }
-        v
+        rewritten_children[&this].clone()
     }
 }
 
@@ -84,7 +109,11 @@ pub fn flatten_nary_ops_cached(term_: Term, Cache(ref mut rewritten): &mut Cache
         }
         if !children_pushed {
             stack.push((t.clone(), true));
-            stack.extend(t.cs.iter().map(|c| (c.clone(), false)));
+            stack.extend(
+                t.cs.iter()
+                    .filter(|c| !(rewritten.contains_key(c) && term_equals.contains(&t)))
+                    .map(|c| (c.clone(), false)),
+            );
             continue;
         }
         let entry = match &t.op {
