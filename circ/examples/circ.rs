@@ -345,9 +345,9 @@ fn main() {
                 Opt::Tuple,
                 Opt::ScalarizeVars,
                 Opt::Flatten,
-                Opt::Sha,
-                Opt::ConstantFold(Box::new([])),
-                Opt::Flatten,
+                //Opt::Sha,
+                //Opt::ConstantFold(Box::new([])),
+                //Opt::Flatten,
                 Opt::Inline,
                 Opt::LinearScan,
                 // The linear scan pass produces more tuples, that must be eliminated
