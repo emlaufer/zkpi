@@ -17,6 +17,7 @@ use structopt::StructOpt;
 
 mod lean;
 //mod lru;
+mod display;
 mod term;
 mod zk;
 
@@ -46,7 +47,7 @@ arg_enum! {
         List,
         TermSize,
         Tree,
-        //TreeTui,
+        TreeTui,
     }
 }
 
@@ -159,11 +160,11 @@ fn main() -> io::Result<()> {
                 );
             } // TODO:
             Command::Tree => {
-                term::display_theorem_trees(&exported);
+                display::display_theorem_trees(&exported);
             }
-            //Command::TreeTui => {
-            //    term::interactive_theorem_dependencies(&definition_name, exported.clone());
-            //}
+            Command::TreeTui => {
+                display::display_theorem_interactive(&exported);
+            }
             Command::List => {
                 panic!("Cannot list with specific theorem")
             }

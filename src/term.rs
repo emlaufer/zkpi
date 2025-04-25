@@ -1518,7 +1518,6 @@ impl Evaluator {
 
     //    while !stack.is_empty() {
     //        let (t, c, children_pushed) = stack.pop();
-
     //
     //    }
     //}
@@ -2229,39 +2228,4 @@ impl Evaluator {
             .insert((term.clone(), amount, depth), res.clone());
         Ok(res)
     }
-}
-
-pub fn display_defn_tree(term: &Term, prefix: &str, is_last: bool) {
-    let new_prefix = if is_last {
-        format!("{}    ", prefix)
-    } else {
-        format!("{}│   ", prefix)
-    };
-
-    match &**term {
-        TermData::Defn(name, ty, value) => {
-            let branch = if is_last { "└──" } else { "├──" };
-            println!("{}{} Defn: {}", prefix, branch, name);
-        }
-        TermData::App(f, e) => {
-            display_defn_tree(f, &new_prefix, false);
-            display_defn_tree(e, &new_prefix, true);
-        }
-        TermData::Binding(BindingData { domain, body, .. }) => {
-            display_defn_tree(domain, &new_prefix, false);
-            display_defn_tree(body, &new_prefix, true);
-        }
-        TermData::Proj(_, _, expr) => {
-            display_defn_tree(expr, &new_prefix, true);
-        }
-        _ => {}
-    }
-}
-
-pub fn display_theorem_trees(theorem: &Theorem) {
-    println!("Type Tree:");
-    display_defn_tree(&theorem.ty, "", true);
-
-    println!("\nProof Tree:");
-    display_defn_tree(&theorem.val, "", true);
 }
