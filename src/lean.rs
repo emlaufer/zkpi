@@ -1100,8 +1100,11 @@ impl LeanEncoding {
                 // }
 
                 let term =
-                    self.export_expr(*val, axioms, inductives, &universes, let_bindings, cache);
-                term
+                    self.export_expr(*val, axioms, inductives, &universes, let_bindings, cache)?;
+                let ty =
+                    self.export_expr(*ty, axioms, inductives, &universes, let_bindings, cache)?;
+
+                Ok(term::defn(name_string, &ty, &term))
             }
             Definition::Axiom {
                 name,

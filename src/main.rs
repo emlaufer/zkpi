@@ -17,7 +17,6 @@ use structopt::StructOpt;
 
 mod lean;
 //mod lru;
-mod phony_rec;
 mod term;
 mod zk;
 
@@ -46,7 +45,7 @@ arg_enum! {
         Count,
         List,
         TermSize,
-        //Tree,
+        Tree,
         //TreeTui,
     }
 }
@@ -159,9 +158,9 @@ fn main() -> io::Result<()> {
                     max(zk_in.axioms.len(), 1),
                 );
             } // TODO:
-            //Command::Tree => {
-            //    term::print_theorem_dependencies(&definition_name, exported.clone());
-            //}
+            Command::Tree => {
+                term::display_theorem_trees(&exported);
+            }
             //Command::TreeTui => {
             //    term::interactive_theorem_dependencies(&definition_name, exported.clone());
             //}
