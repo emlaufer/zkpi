@@ -492,7 +492,6 @@ impl LeanEncoding {
                         res.expressions.push(expression);
                     }
                     Instruction::IDefinition(definition) => {
-                        //println!("parsing def: {:?}", definition.name());
                         res.name_to_def
                             .insert(definition.name(), res.definitions.len());
 
@@ -754,8 +753,10 @@ impl LeanEncoding {
                 }
                 res
             }
-            Expression::ELS { .. } => {
-                panic!("ELS not implemented!");
+            Expression::ELS { string } => {
+                let value = std::str::from_utf8(&string).unwrap();
+                term::string(value)
+                //panic!("ELS not implemented! {:?}", value);
             }
             _ => {
                 println!("{:?}", expr);
@@ -1079,7 +1080,7 @@ impl LeanEncoding {
         let_bindings: &mut BTreeMap<usize, Term>,
         cache: &mut Option<HashMap<(usize, u64, u64), Term>>,
     ) -> Result<Term, String> {
-        debug!("Exported def: {}", self.resolve_name(def.name()));
+        println!("Exported def: {}", self.resolve_name(def.name()));
         //println!("Export def: {}", self.resolve_name(def.name()));
         match def {
             Definition::Def {

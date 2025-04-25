@@ -7,6 +7,7 @@ use hashconsing::{
 use log::debug;
 use lru::LruCache;
 use nom::number;
+use serde::de::value;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::hash::{Hash, Hasher};
@@ -1003,6 +1004,7 @@ pub enum TermData {
     Binding(BindingData),
     App(Term, Term),
     Axiom(String),
+    Defn(String, Term, Term),
 
     // new induction things...
     Ind(String),
@@ -1013,6 +1015,7 @@ pub enum TermData {
     // Primitive Projection
     Proj(String, usize, Term),
     ProjTyper(String),
+    String(String),
 }
 
 impl TermData {
@@ -1218,6 +1221,12 @@ impl std::fmt::Display for TermData {
             TermData::ProjTyper(name) => {
                 write!(fmt, "ProjTyper({})", name)
             }
+            TermData::Defn(name, ty, value) => {
+                write!(fmt, "Defn({}, {}, {})", name, ty, value)
+            }
+            TermData::String(value) => {
+                write!(fmt, "String({})", value)
+            }
         }
     }
 }
@@ -1291,6 +1300,18 @@ pub fn app_list(terms: &[Term]) -> Term {
 
 pub fn axiom<S: AsRef<str>>(name: S) -> Term {
     FACTORY.mk(TermData::Axiom(name.as_ref().into()))
+}
+
+pub fn defn<S: AsRef<str>>(name: S, ty: &Term, value: &Term) -> Term {
+    FACTORY.mk(TermData::Defn(
+        name.as_ref().into(),
+        ty.clone(),
+        value.clone(),
+    ))
+}
+
+pub fn string<S: AsRef<str>>(value: S) -> Term {
+    FACTORY.mk(TermData::String(value.as_ref().into()))
 }
 
 pub fn ind<S: AsRef<str>>(name: S) -> Term {
@@ -2065,6 +2086,8 @@ impl Evaluator {
                 assert!(false, "Should never type a projtyper...");
                 unimplemented!();
             }
+            TermData::Defn(name, ty, value) => ty.clone(),
+            TermData::String(value) => panic!("Cannot operate on strings yet"),
         };
 
         self.ty_cache.insert(term.clone(), context, res.clone());

@@ -45,6 +45,9 @@ arg_enum! {
         Export,
         Count,
         List,
+        TermSize,
+        //Tree,
+        //TreeTui,
     }
 }
 
@@ -137,6 +140,9 @@ fn main() -> io::Result<()> {
                     zk::Exporter::export(exported.clone()).unwrap().serialize()
                 );
             }
+            Command::TermSize => {
+                println!("Got size: {}", exported.size(&mut size_cache));
+            }
             Command::Count => {
                 let zk_in = zk::Exporter::export(exported.clone()).unwrap();
                 println!(
@@ -152,7 +158,13 @@ fn main() -> io::Result<()> {
                     max(zk_in.ind_nrs.nodes.len(), 1),
                     max(zk_in.axioms.len(), 1),
                 );
-            }
+            } // TODO:
+            //Command::Tree => {
+            //    term::print_theorem_dependencies(&definition_name, exported.clone());
+            //}
+            //Command::TreeTui => {
+            //    term::interactive_theorem_dependencies(&definition_name, exported.clone());
+            //}
             Command::List => {
                 panic!("Cannot list with specific theorem")
             }

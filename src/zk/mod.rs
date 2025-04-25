@@ -15,7 +15,6 @@ use std::num::Wrapping;
 
 use once_cell::sync::Lazy;
 
-mod named_ir;
 mod sim;
 
 static mut LIFT_COUNTS_MAP: Lazy<HashMap<usize, usize>> = Lazy::new(|| HashMap::new());
@@ -2432,11 +2431,13 @@ impl Exporter {
 
         let simplified_val = eval.eval(theorem.val.clone()).unwrap();
         let simplified_ty = eval.eval(theorem.ty.clone()).unwrap();
-        let rule = exporter.export_ty_term(simplified_val)?;
+        let rule = exporter.export_ty_term(simplified_val).unwrap();
         let result_type = exporter.get_zk_rule(rule).result_term_idx;
 
         if result_type != exporter.zk_input.expected_type {
-            let rule = exporter.export_unify(rule, exporter.zk_input.expected_type)?;
+            let rule = exporter
+                .export_unify(rule, exporter.zk_input.expected_type)
+                .unwrap();
             exporter.zk_input.proving_rule = rule;
         } else {
             exporter.zk_input.proving_rule = rule;
@@ -4667,6 +4668,11 @@ impl Exporter {
             TermData::ProjTyper(name) => {
                 let inductive = self.get_or_export_ind(name);
                 ExpTerm::proj_placeholder(inductive)
+            }
+            TermData::Defn(name, ty, val) => {
+                let val_idx = self.export_term(val.clone(), num_bindings);
+                let val_term = self.get_zk_term(val_idx).clone();
+                val_term
             }
             _ => {
                 assert!(false);
