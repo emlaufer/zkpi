@@ -3896,19 +3896,27 @@ impl Exporter {
                                         break;
                                     }
                                     println!(
-                                        "Expected: {}\n\nGot: {}\n\nCURR E RES: {}\n\nE: {}",
+                                        "TEST1 : {:?}\nTEST2 : {:?}\n",
+                                        &self.zk_input.terms[domain_ty].left,
+                                        &self.zk_input.terms[e_result].left,
+                                    );
+
+                                    println!(
+                                        "Expected: {} (idx: {})\n\nGot: {} (idx: {})\n\nCURR E RES: {}\n\nE: {}",
                                         term_to_string(
                                             domain_ty,
                                             &self.zk_input.terms,
                                             &self.axiom_rev_mapping,
                                             &self.ind_rev_map
                                         ),
+                                        domain_ty,
                                         term_to_string(
                                             e_result,
                                             &self.zk_input.terms,
                                             &self.axiom_rev_mapping,
                                             &self.ind_rev_map
                                         ),
+                                        e_result,
                                         term_to_string(
                                             curr_e_res,
                                             &self.zk_input.terms,
@@ -4427,7 +4435,13 @@ impl Exporter {
     //}
 
     pub fn add_zk_term(&mut self, zk_term: ExpTerm) -> usize {
-        if let Some(index) = self.zk_term_cache.get(&zk_term) {
+        // Clear top_level_func for cache
+        let mut zk_term_test = zk_term.clone();
+        // fixup top_level_func for non app terms.
+        if zk_term.kind != EXPR_APP {
+            zk_term_test.top_level_func = 0;
+        }
+        if let Some(index) = self.zk_term_cache.get(&zk_term_test) {
             return *index;
         }
 
@@ -4486,6 +4500,9 @@ impl Exporter {
 
         // dont include top level func for caching...
         self.zk_term_cache.insert(zk_term.clone(), index);
+        if (index == 19 || index == 2) {
+            println!("ZK TEMR: {:?}", zk_term);
+        }
 
         // fixup top_level_func for non app terms.
         if zk_term.kind != EXPR_APP {
@@ -4579,7 +4596,7 @@ impl Exporter {
             return *index;
         }
 
-        let zk_term = match &*term {
+        let zk_term = match &**term {
             // convert debruijn index to debruijn level...
             // TODO: need more sophisticated names...todo
             TermData::Bound(index) => {

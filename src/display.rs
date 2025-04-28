@@ -16,7 +16,7 @@ pub fn display_defn_tree(term: &Term, prefix: &str, is_last: bool) {
         format!("{}│   ", prefix)
     };
 
-    match &**term {
+    match &***term {
         TermData::Defn(name, ty, value) => {
             let branch = if is_last { "└──" } else { "├──" };
             println!("{}{} Defn: {}", prefix, branch, name);
@@ -46,8 +46,14 @@ pub fn display_theorem_trees(theorem: &Theorem) {
 
 /// Interactive display for a theorem's definition tree.
 pub fn display_theorem_interactive(theorem: &Theorem) {
-    // Generate the definition tree from the theorem.
-    let root = generate_defn_tree(&theorem.val, "Theorem".to_string(), &mut HashSet::new());
+    // Generate the combined tree with "Theorem" as the root.
+    let mut visited = HashSet::new();
+    let type_tree = generate_defn_tree(&theorem.ty, "Type".to_string(), &mut visited);
+    let proof_tree = generate_defn_tree(&theorem.val, "Proof".to_string(), &mut visited);
+    let root = TreeNode {
+        name: "Theorem".to_string(),
+        children: vec![type_tree, proof_tree],
+    };
 
     // Interactive display logic.
     let mut expanded_nodes: HashMap<String, bool> = HashMap::new();
@@ -128,7 +134,7 @@ fn generate_defn_tree(term: &Term, name: String, visited: &mut HashSet<String>) 
 
     // Recursively traverse the term structure to find all `Defn` nodes.
     fn traverse(term: &Term, visited: &mut HashSet<String>, children: &mut Vec<TreeNode>) {
-        match &**term {
+        match &***term {
             TermData::Defn(defn_name, _, value) => {
                 // Add the definition's value to the tree.
                 if !visited.contains(defn_name) {

@@ -71,7 +71,7 @@ impl EvaluationCache {
             return res.clone();
         }
 
-        let res = match &*term {
+        let res = match &**term {
             TermData::Bound(index) => {
                 if *index >= num_bindings {
                     let mut res = HashSet::new();
@@ -120,7 +120,7 @@ impl EvaluationCache {
                 }
 
                 stack.push((t.clone(), b, 1));
-                match &*t {
+                match &**t {
                     TermData::App(f, e) => {
                         stack.push((f.clone(), b, 0));
                         //stack.push((e.clone(), b, false));
@@ -139,7 +139,7 @@ impl EvaluationCache {
                 //}
 
                 stack.push((t.clone(), b, 2));
-                match &*t {
+                match &**t {
                     TermData::App(f, e) => {
                         //stack.push((f.clone(), b, 0));
                         stack.push((e.clone(), b, 0));
@@ -151,7 +151,7 @@ impl EvaluationCache {
                     _ => {}
                 };
             } else {
-                let this_res = match &*t {
+                let this_res = match &**t {
                     TermData::Bound(index) => {
                         if *index >= b {
                             let mut res = HashSet::new();
@@ -244,9 +244,16 @@ impl Theorem {
         println!("original term: {:?}", self.val);
         println!("original ty: {:?}", self.ty);
         println!("simplifying...");
+        let test = propagate_flag(&self.val);
+        let test2 = sum_unflagged_sizes(&test, &mut Some(HConMap::default()));
+        let test3 = test.size(&mut Some(HConMap::default()));
+        println!(
+            "FLAG: {}, size unflagged: {}, total size: {}",
+            test.flag, test2, test3
+        );
         let test_val = {
             let test = eval
-                .eval(self.val.clone())
+                .eval(test.clone())
                 .map_err(|e| format!("Simplify val err: {}", e))?;
             garbage_collect();
             let mut cache = Some(HConMap::default());
@@ -257,6 +264,13 @@ impl Theorem {
             );
             test
         };
+        let test = propagate_flag(&test_val);
+        let test2 = sum_unflagged_sizes(&test, &mut Some(HConMap::default()));
+        let test3 = test.size(&mut Some(HConMap::default()));
+        println!(
+            "SIMPLIFIED FLAG: {}, size unflagged: {}, total size: {}",
+            test.flag, test2, test3
+        );
 
         //OK: WHAT I WILL DO:
         //    - output mapping between terms and the expr number to find bad expr number
@@ -431,7 +445,7 @@ impl Inductive {
     fn ty_body(&self) -> Term {
         let mut res = &self.ty;
         for i in 0..self.num_params {
-            if let TermData::Binding(BindingData { body, .. }) = &**res {
+            if let TermData::Binding(BindingData { body, .. }) = &***res {
                 res = body;
             } else {
                 panic!("Para isn't a binding in Inductive!");
@@ -456,7 +470,7 @@ impl Inductive {
         let mut res = 0;
 
         for param in rule_params {
-            match &*param.top_level_func() {
+            match &**param.top_level_func() {
                 TermData::Ind(name) if name == &self.name => {
                     break;
                 }
@@ -560,7 +574,7 @@ impl Inductive {
         let use_nondependent =
             //if matches!(*body, TermData::Sort(0)) && self.num_params == self.ty.params().len() {
             //if let Ok(TermData::Sort(1)) = body_ty {
-            if matches!(*body.body(), TermData::Sort(0)) {
+            if matches!(**body.body(), TermData::Sort(0)) {
                 true
             } else {
                 false
@@ -599,7 +613,7 @@ impl Inductive {
 
         //if matches!(*body, TermData::Sort(0)) && self.num_params == self.ty.params().len() {
         //if let Ok(TermData::Sort(1)) = body_ty {
-        if matches!(*body.body(), TermData::Sort(0)) {
+        if matches!(**body.body(), TermData::Sort(0)) {
             true
         } else {
             false
@@ -620,7 +634,7 @@ impl Inductive {
         let use_nondependent =
             //if matches!(*body, TermData::Sort(0)) && self.num_params == self.ty.params().len() {
             //if let Ok(TermData::Sort(1)) = body_ty {
-            if matches!(*body.body(), TermData::Sort(0)) {
+            if matches!(**body.body(), TermData::Sort(0)) {
                 true
             } else {
                 false
@@ -763,7 +777,7 @@ impl Inductive {
             // due to ind type rules, may only be recursive in the body of
             // the param
             let param_func = param.body().top_level_func();
-            match &*param_func {
+            match &**param_func {
                 TermData::Ind(name) if name == &self.name => {
                     let mut params = param.params();
                     let motive_binding = bound(
@@ -955,7 +969,7 @@ impl InductiveRule {
     pub fn num_recs(&self, inductive: &Inductive) -> usize {
         let mut count = 0;
         for arg in self.ty.params().iter().rev() {
-            if matches!(*arg.body().top_level_func(), TermData::Ind(ref name) if name == &inductive.name)
+            if matches!(**arg.body().top_level_func(), TermData::Ind(ref name) if name == &inductive.name)
             {
                 count += 1;
             } else {
@@ -973,11 +987,9 @@ impl std::fmt::Debug for InductiveRule {
 }
 
 consign! {
-    let FACTORY = consign(0) for TermData;
+    let FACTORY = consign(0) for TaggedTermData;
 }
 static gc_counter: RwLock<usize> = RwLock::new(0);
-
-pub type Term = HConsed<TermData>;
 
 #[derive(Debug, Hash, Copy, Clone, PartialEq, Eq)]
 pub enum BindingType {
@@ -1121,25 +1133,22 @@ impl TermData {
     }
 
     fn size(&self, cache: &mut Option<HConMap<Term, usize>>) -> usize {
-        if let Some(size) = cache
-            .as_ref()
-            .map(|c| c.get(&raw_term(self.clone())))
-            .flatten()
-        {
-            return *size;
-            //return 1;
-        }
-
         let res = match self {
+            TermData::Bound(_) | TermData::Sort(_) | TermData::Axiom(_) | TermData::String(_) => 0,
             TermData::Binding(BindingData { domain, body, .. }) => {
                 domain.size(cache).saturating_add(body.size(cache))
             }
             TermData::App(f, e) => f.size(cache).saturating_add(e.size(cache)),
-            _ => 1,
+            TermData::Proj(_, _, expr) => expr.size(cache),
+            TermData::Defn(_, ty, value) => value.size(cache),
+            TermData::Ind(_) | TermData::IndCtor(_, _) | TermData::IndRec(_, _) => 0,
+            TermData::ProjTyper(_) => 0,
         };
-        cache
-            .as_mut()
-            .map(|c| c.insert(raw_term(self.clone()), res));
+        let res = res + 1;
+
+        if let Some(c) = cache {
+            c.insert(raw_term(self.clone()), res);
+        }
         res
     }
 
@@ -1198,10 +1207,10 @@ impl std::fmt::Display for TermData {
                 write!(fmt, "Sort({})", level)
             }
             TermData::Binding(BindingData { ty, domain, body }) => {
-                write!(fmt, "{:?}({}, {})", ty, domain, body)
+                write!(fmt, "{:?}({}, {})", ty, ***domain, ***body)
             }
             TermData::App(f, e) => {
-                write!(fmt, "App({}, {})", f, e)
+                write!(fmt, "App({}, {})", ***f, ***e)
             }
             TermData::Ind(name) => {
                 write!(fmt, "Ind({})", name)
@@ -1216,13 +1225,13 @@ impl std::fmt::Display for TermData {
                 write!(fmt, "Axiom({})", name)
             }
             TermData::Proj(name, index, expr) => {
-                write!(fmt, "Proj({}, {}, {})", name, index, expr)
+                write!(fmt, "Proj({}, {}, {})", name, index, ***expr)
             }
             TermData::ProjTyper(name) => {
                 write!(fmt, "ProjTyper({})", name)
             }
             TermData::Defn(name, ty, value) => {
-                write!(fmt, "Defn({}, {}, {})", name, ty, value)
+                write!(fmt, "Defn({}, {}, {})", name, ***ty, ***value)
             }
             TermData::String(value) => {
                 write!(fmt, "String({})", value)
@@ -1231,39 +1240,125 @@ impl std::fmt::Display for TermData {
     }
 }
 
+#[derive(Hash, Clone, PartialEq, Eq)]
+pub struct TaggedTermData {
+    pub data: TermData,
+    pub flag: bool,
+}
+
+impl TaggedTermData {
+    pub fn new(data: TermData, flag: bool) -> Self {
+        TaggedTermData { data, flag }
+    }
+}
+
+pub fn propagate_flag(term: &Term) -> Term {
+    match &***term {
+        TermData::Binding(BindingData { ty, domain, body }) => {
+            let new_domain = propagate_flag(domain);
+            let new_body = propagate_flag(body);
+            let new_flag = term.flag || new_domain.flag || new_body.flag;
+            FACTORY.mk(TaggedTermData::new(
+                TermData::Binding(BindingData {
+                    ty: *ty,
+                    domain: new_domain,
+                    body: new_body,
+                }),
+                new_flag,
+            ))
+        }
+        TermData::App(f, e) => {
+            let new_f = propagate_flag(f);
+            let new_e = propagate_flag(e);
+            let new_flag = term.flag || new_f.flag || new_e.flag;
+            FACTORY.mk(TaggedTermData::new(TermData::App(new_f, new_e), new_flag))
+        }
+        TermData::Proj(name, index, expr) => {
+            let new_expr = propagate_flag(expr);
+            let new_flag = term.flag || new_expr.flag;
+            FACTORY.mk(TaggedTermData::new(
+                TermData::Proj(name.clone(), *index, new_expr),
+                new_flag,
+            ))
+        }
+        _ => {
+            if term.flag {
+                term.clone()
+            } else {
+                FACTORY.mk(TaggedTermData::new(term.data.clone(), false))
+            }
+        }
+    }
+}
+
+pub fn sum_unflagged_sizes(term: &Term, cache: &mut Option<HConMap<Term, usize>>) -> usize {
+    // If the term is not flagged, include its size; otherwise, skip it.
+    let term_size = if !term.flag { 1_usize } else { 0_usize };
+
+    // Recursively process child terms based on the term's structure.
+    let children_size = match &***term {
+        TermData::Bound(_) | TermData::Sort(_) | TermData::Axiom(_) | TermData::String(_) => 0,
+        TermData::Binding(BindingData { domain, body, .. }) => {
+            sum_unflagged_sizes(domain, cache).saturating_add(sum_unflagged_sizes(body, cache))
+        }
+        TermData::App(f, e) => {
+            sum_unflagged_sizes(f, cache).saturating_add(sum_unflagged_sizes(e, cache))
+        }
+        TermData::Proj(_, _, expr) => sum_unflagged_sizes(expr, cache),
+        TermData::Defn(_, ty, value) => sum_unflagged_sizes(value, cache),
+        TermData::Ind(_) | TermData::IndCtor(_, _) | TermData::IndRec(_, _) => 0,
+        TermData::ProjTyper(_) => 0,
+    };
+
+    term_size.saturating_add(children_size)
+}
+
+pub type Term = HConsed<TaggedTermData>;
+
 pub fn raw_term(data: TermData) -> Term {
-    FACTORY.mk(data)
+    FACTORY.mk(TaggedTermData::new(data, false)) // Default flag to false
+}
+
+impl std::ops::Deref for TaggedTermData {
+    type Target = TermData;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+impl std::fmt::Debug for TaggedTermData {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(fmt, "{:?} (flag: {})", self.data, self.flag)
+    }
 }
 
 pub fn bound(index: usize) -> Term {
-    FACTORY.mk(TermData::Bound(index))
+    raw_term(TermData::Bound(index))
 }
 
 pub fn sort(level: usize) -> Term {
-    FACTORY.mk(TermData::Sort(level))
+    raw_term(TermData::Sort(level))
 }
 
 pub fn binding(ty: BindingType, domain: Term, body: Term) -> Term {
-    let binding_data = BindingData { ty, domain, body };
-    FACTORY.mk(TermData::Binding(binding_data))
+    raw_term(TermData::Binding(BindingData { ty, domain, body }))
 }
 
 pub fn lam(domain: Term, body: Term) -> Term {
-    let binding_data = BindingData {
+    raw_term(TermData::Binding(BindingData {
         ty: BindingType::Lam,
         domain,
         body,
-    };
-    FACTORY.mk(TermData::Binding(binding_data))
+    }))
 }
 
 pub fn pi(domain: Term, body: Term) -> Term {
-    let binding_data = BindingData {
+    raw_term(TermData::Binding(BindingData {
         ty: BindingType::Pi,
         domain,
         body,
-    };
-    FACTORY.mk(TermData::Binding(binding_data))
+    }))
 }
 
 pub fn pi_list(terms: &[Term]) -> Term {
@@ -1283,11 +1378,11 @@ pub fn lam_list(terms: &[Term]) -> Term {
 }
 
 pub fn proj(name: String, index: usize, e: Term) -> Term {
-    FACTORY.mk(TermData::Proj(name, index, e))
+    raw_term(TermData::Proj(name, index, e))
 }
 
 pub fn app(f: Term, e: Term) -> Term {
-    FACTORY.mk(TermData::App(f, e))
+    raw_term(TermData::App(f, e))
 }
 
 pub fn app_list(terms: &[Term]) -> Term {
@@ -1299,38 +1394,45 @@ pub fn app_list(terms: &[Term]) -> Term {
 }
 
 pub fn axiom<S: AsRef<str>>(name: S) -> Term {
-    FACTORY.mk(TermData::Axiom(name.as_ref().into()))
+    raw_term(TermData::Axiom(name.as_ref().into()))
 }
 
 pub fn defn<S: AsRef<str>>(name: S, ty: &Term, value: &Term) -> Term {
-    FACTORY.mk(TermData::Defn(
+    raw_term(TermData::Defn(
         name.as_ref().into(),
         ty.clone(),
         value.clone(),
     ))
 }
 
+pub fn defn_witness<S: AsRef<str>>(name: S, ty: &Term, value: &Term, witness: bool) -> Term {
+    FACTORY.mk(TaggedTermData::new(
+        TermData::Defn(name.as_ref().into(), ty.clone(), value.clone()),
+        witness,
+    ))
+}
+
 pub fn string<S: AsRef<str>>(value: S) -> Term {
-    FACTORY.mk(TermData::String(value.as_ref().into()))
+    raw_term(TermData::String(value.as_ref().into()))
 }
 
 pub fn ind<S: AsRef<str>>(name: S) -> Term {
-    FACTORY.mk(TermData::Ind(name.as_ref().into()))
+    raw_term(TermData::Ind(name.as_ref().into()))
 }
 
 pub fn ind_ctor<S: AsRef<str>, SP: AsRef<str>>(ind_name: S, ind_ctor: SP) -> Term {
-    FACTORY.mk(TermData::IndCtor(
+    raw_term(TermData::IndCtor(
         ind_name.as_ref().into(),
         ind_ctor.as_ref().into(),
     ))
 }
 
 pub fn ind_rec<S: AsRef<str>>(ind_name: S, motive_sort: usize) -> Term {
-    FACTORY.mk(TermData::IndRec(ind_name.as_ref().into(), motive_sort))
+    raw_term(TermData::IndRec(ind_name.as_ref().into(), motive_sort))
 }
 
 pub fn proj_typer<S: AsRef<str>>(ind_name: S) -> Term {
-    FACTORY.mk(TermData::ProjTyper(ind_name.as_ref().into()))
+    raw_term(TermData::ProjTyper(ind_name.as_ref().into()))
 }
 
 pub fn garbage_collect() {
@@ -1534,7 +1636,7 @@ impl Evaluator {
             return Ok(res.clone());
         }
 
-        let res = match &*term {
+        let res = match &**term {
             TermData::Bound(index) => {
                 if let Some(bound_term) = context.get_bound(*index) {
                     let res = self
@@ -1580,7 +1682,7 @@ impl Evaluator {
                     ty: _,
                     domain,
                     body,
-                }) = &*f_value
+                }) = &**f_value
                 {
                     context.push(e_value.clone());
                     typing_context.push(domain.clone());
@@ -1609,7 +1711,7 @@ impl Evaluator {
                     self.eval_with_context(expr.clone(), context, typing_context, rec, max_depth)?;
 
                 // Attempt to evaluate it...
-                let res = match &*eval_expr.top_level_func() {
+                let res = match &**eval_expr.top_level_func() {
                     TermData::IndCtor(ind_name, rule_name) if ind_name.starts_with(name) => {
                         let ind = self.inductives.get(ind_name).clone().unwrap_or_else(|| {
                             // cant find inductive...fail
@@ -1636,6 +1738,11 @@ impl Evaluator {
                 };
                 res
             }
+            TermData::Defn(name, ty, value) => {
+                let eval_expr =
+                    self.eval_with_context(value.clone(), context, typing_context, rec, max_depth)?;
+                eval_expr
+            }
             _ => term.clone(),
         };
 
@@ -1648,27 +1755,19 @@ impl Evaluator {
             } else {
                 res
             };
-        //} else {
-        //    res
-        //};
-        //} else {
-        //res
-        //};
-        //garbage_collect();
 
-        //if free_bindings.is_empty() {
-        //    self.eval_cache
-        //        .insert((term.clone(), Context::new().hash()), res.clone());
-        //} else {
-        //if !rec {
-        self.eval_cache.insert(term.clone(), context, res.clone());
-        //}
-        //}
+        // Ensure the returned term is tagged if the input term is tagged.
+        let tagged_res = FACTORY.mk(TaggedTermData::new(res.data.clone(), term.flag || res.flag));
+
+        // Cache the result.
+        self.eval_cache
+            .insert(term.clone(), context, tagged_res.clone());
+
         debug!(
             "\n C = {:?}\n T = {:?}\n |- {:?} => {:?}",
-            context, typing_context, term, res
+            context, typing_context, term, tagged_res
         );
-        Ok(res)
+        Ok(tagged_res)
     }
 
     // unwrap apps from a term untill there are only num left.
@@ -1677,14 +1776,14 @@ impl Evaluator {
         // get the number of apps for this term
         let mut curr_term = term.clone();
         let mut num_apps = 0;
-        while let TermData::App(f, _) = &*curr_term {
+        while let TermData::App(f, _) = &**curr_term {
             num_apps += 1;
             curr_term = f.clone();
         }
         let mut curr_term = term.clone();
         let mut num_to_remove = num_apps - num;
         while num_to_remove > 0
-            && let TermData::App(f, _) = &*curr_term
+            && let TermData::App(f, _) = &**curr_term
         {
             num_to_remove -= 1;
             curr_term = f.clone();
@@ -1702,13 +1801,13 @@ impl Evaluator {
         typing_context: &mut Context,
         max_depth: usize,
     ) -> Option<Term> {
-        if let TermData::IndRec(rec_ind_name, motive_sort) = &*term.top_level_func() {
+        if let TermData::IndRec(rec_ind_name, motive_sort) = &**term.top_level_func() {
             let args = term.app_args();
             let inductive = self.inductives.get(rec_ind_name).unwrap().clone();
             if args.len() == inductive.elim(*motive_sort).params().len() {
                 let argument = &args[args.len() - 1];
 
-                if let TermData::IndCtor(ctor_ind_name, rule_name) = &*argument.top_level_func() {
+                if let TermData::IndCtor(ctor_ind_name, rule_name) = &**argument.top_level_func() {
                     if rec_ind_name == ctor_ind_name {
                         if inductive.is_family {
                             panic!(
@@ -1746,7 +1845,7 @@ impl Evaluator {
                             .enumerate()
                         {
                             // if recursive, apply the eliminator again...
-                            if let TermData::Ind(ind_name) = &*ty.body().top_level_func() {
+                            if let TermData::Ind(ind_name) = &**ty.body().top_level_func() {
                                 if ind_name == &inductive.name {
                                     let mut params = rule_args[i].params();
                                     let ind_args =
@@ -1772,7 +1871,7 @@ impl Evaluator {
                         let elim = app_list(&elim_app);
                         let res = self
                             .eval_with_context(elim.clone(), context, typing_context, true, 1000)
-                            .expect(&format!("FAILED ELIM for {}: {}", inductive.name, elim));
+                            .expect(&format!("FAILED ELIM for {}: {}", inductive.name, **elim));
 
                         return Some(res);
                     }
@@ -1786,7 +1885,7 @@ impl Evaluator {
                         .ty_with_context(argument.clone(), typing_context)
                         .unwrap();
 
-                    if !matches!(&*arg_type.top_level_func(), TermData::Ind(name) if name == &inductive.name)
+                    if !matches!(&**arg_type.top_level_func(), TermData::Ind(name) if name == &inductive.name)
                     {
                         return None;
                     }
@@ -1839,7 +1938,7 @@ impl Evaluator {
             return Ok(res.clone());
         }
 
-        let res = match &*term {
+        let res = match &**term {
             TermData::Bound(index) => {
                 if let Some(bound_term) = context.get_bound(*index) {
                     self.lift(bound_term, *index as isize + 1)?
@@ -1873,7 +1972,7 @@ impl Evaluator {
                     BindingType::Pi => {
                         let domain_sort = self.ty_with_context(domain_ty.clone(), context)?;
                         // TODO: ensure domain_value and body ty are sorts
-                        let i = if let TermData::Sort(level) = *domain_sort {
+                        let i = if let TermData::Sort(level) = **domain_sort {
                             Ok(level)
                         } else {
                             Err(format!(
@@ -1884,7 +1983,7 @@ impl Evaluator {
                         //context.push(domain_ty.clone());
                         //let body_sort = ty_with_context(body_ty.clone(), axioms, context)?;
                         //context.pop();
-                        let j = if let TermData::Sort(level) = *body_ty {
+                        let j = if let TermData::Sort(level) = **body_ty {
                             Ok(level)
                         } else {
                             // may need to fully evaluate due to impredicative sort.
@@ -1905,7 +2004,7 @@ impl Evaluator {
                             )?;
                             let evaled_ty = self.ty_with_context(body_eval, context)?;
 
-                            if let TermData::Sort(level) = *evaled_ty {
+                            if let TermData::Sort(level) = **evaled_ty {
                                 Ok(level)
                             } else {
                                 println!(
@@ -1938,7 +2037,7 @@ impl Evaluator {
                     ty: _,
                     domain,
                     body,
-                }) = &*f_ty
+                }) = &**f_ty
                 {
                     let domain_value = self.eval_with_context(
                         domain.clone(),
@@ -1963,15 +2062,15 @@ impl Evaluator {
                         e_ty_value.clone(),
                         context,
                     ) {
-                        println!("term: {}", term);
-                        println!("f_ty: {}", f_ty);
-                        println!("e: {}", e);
+                        println!("term: {}", **term);
+                        println!("f_ty: {}", **f_ty);
+                        println!("e: {}", ***e);
                         println!("context: {:?}", context);
-                        println!("e_ty: {}", e_ty);
-                        println!("domain: {}", domain_value);
+                        println!("e_ty: {}", **e_ty);
+                        println!("domain: {}", **domain_value);
                         return Err(format!(
                             "Type mismatch: got {}, expected: {}",
-                            e_ty_value, domain_value
+                            **e_ty_value, **domain_value
                         ));
                         //return Err("".to_string());
                     }
@@ -2017,7 +2116,7 @@ impl Evaluator {
                     .cloned()
                     .ok_or(format!("Undefined axiom: '{}'", name))?;
                 if !matches!(
-                    &*self.ty_with_context(axiom.clone(), context)?,
+                    &**self.ty_with_context(axiom.clone(), context)?,
                     TermData::Sort(_)
                 ) {
                     return Err(format!("Axiom {} is not a sort!", name));
@@ -2058,7 +2157,7 @@ impl Evaluator {
                 let expr_ty = self.ty_with_context(expr.clone(), context)?;
                 let ind = expr_ty.top_level_func();
 
-                if let TermData::Ind(ind_full_name) = &*ind
+                if let TermData::Ind(ind_full_name) = &**ind
                     && ind_full_name.starts_with(name)
                 {
                     let projector = self.inductives[ind_full_name]
@@ -2134,7 +2233,7 @@ impl Evaluator {
                         ty: BindingType::Pi,
                         domain,
                         ..
-                    }) = &*b_ty
+                    }) = &**b_ty
                     {
                         let expanded_b = lam(
                             domain.clone(),
@@ -2150,7 +2249,7 @@ impl Evaluator {
                         ty: BindingType::Pi,
                         domain,
                         ..
-                    }) = &*a_ty
+                    }) = &**a_ty
                     {
                         let expanded_a = lam(domain.clone(), app(a.clone(), bound(0)));
                         if self.def_equals_with_context(b.clone(), expanded_a, context) {
@@ -2162,7 +2261,7 @@ impl Evaluator {
         }
 
         // otherwise, recurse structurally
-        match (&*a, &*b) {
+        match (&**a, &**b) {
             (
                 TermData::Binding(BindingData {
                     ty: a_ty,
@@ -2200,7 +2299,7 @@ impl Evaluator {
             return Ok(res.clone());
         }
 
-        let res = match &*term {
+        let res = match &**term {
             TermData::Bound(index) if *index >= depth => {
                 bound(index.checked_add_signed(amount).ok_or(&format!(
                     "Lifting over/underflow evaluating term: {:?}",

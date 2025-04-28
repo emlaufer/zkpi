@@ -1104,7 +1104,13 @@ impl LeanEncoding {
                 let ty =
                     self.export_expr(*ty, axioms, inductives, &universes, let_bindings, cache)?;
 
-                Ok(term::defn(name_string, &ty, &term))
+                // tag the
+                Ok(term::defn_witness(
+                    name_string.clone(),
+                    &ty,
+                    &term,
+                    name_string == "witness",
+                ))
             }
             Definition::Axiom {
                 name,
@@ -1172,7 +1178,7 @@ impl LeanEncoding {
                     let_bindings,
                     cache,
                 )?;
-                let non_dependent = if matches!(*test_ty.body(), term::TermData::Sort(0)) {
+                let non_dependent = if matches!(**test_ty.body(), term::TermData::Sort(0)) {
                     true
                 } else {
                     false

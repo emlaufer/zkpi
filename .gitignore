@@ -10,3 +10,4 @@ mathlib.out
 
 */**/*.pin
 zok/meta.zok
+.aider*

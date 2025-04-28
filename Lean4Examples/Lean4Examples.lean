@@ -7,3 +7,5 @@ import «Lean4Examples».DegreeIsEven
 import «Lean4Examples».DedupList
 import «Lean4Examples».InsertionSort
 import «Lean4Examples».Pigeonhole
+
+def one := 1
