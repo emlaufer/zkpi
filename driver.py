@@ -4,6 +4,7 @@ import argparse
 import subprocess
 import sys
 import os
+import shutil
 import time
 from timeit import Timer
 
@@ -12,7 +13,7 @@ parser = argparse.ArgumentParser(
             description='Run one-shot proofs from zkpi in a single command')
 parser.add_argument('-l', '--lean-file')
 parser.add_argument('-e', '--export-file')
-parser.add_argument('-n', '--no-cleanup', action=argparse.BooleanOptionalAction)
+parser.add_argument('-n', '--no-cleanup', action='store_true')
 parser.add_argument('--lean_cmd', default='lean')
 parser.add_argument('-c', '--circuit-directory', default='zok')
 parser.add_argument('--circ-exe', default='circ')
@@ -87,7 +88,7 @@ if p.returncode != 0:
     print('Failed to convert theorem {}...'.format(args.theorem_name))
     exit(1)
 duration = time.time_ns() - start
-if args.time is not None:
+if args.time:
     print(f"Simplify/Export time: {duration}")
 
 input_file.write(p.stdout.decode())
@@ -101,14 +102,24 @@ if not args.no_cleanup and args.lean_file is not None:
 # oneshot proof
 print('Running oneshot zkpi proof')
 
-circ_exe = os.path.abspath(args.circ_exe)
+# Resolve PATH commands before changing directory, while preserving explicit paths.
+if os.path.dirname(args.circ_exe):
+    circ_exe = os.path.abspath(args.circ_exe)
+else:
+    circ_exe = shutil.which(args.circ_exe)
+    if circ_exe is None:
+        parser.error("Cannot find circuit executable on PATH: {}".format(args.circ_exe))
+    circ_exe = os.path.abspath(circ_exe)
 os.chdir(args.circuit_directory)
 p = subprocess.Popen([circ_exe, '--language', 'Zsharp', 'eval.zok', 'r1cs', '--proof-system', 'mirage', '--action', 'oneshot', '--inputs', "{}.pin".format(args.theorem_name)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-while p.poll() is None:
-    l = p.stdout.readline().decode("utf-8").strip()
-    print(l)
+for line in p.stdout:
+    print(line.decode("utf-8", errors="replace"), end="")
+p.stdout.close()
+returncode = p.wait()
 
 # cleanup
 if not args.no_cleanup:
     os.remove("{}.pin".format(args.theorem_name))
+
+sys.exit(returncode if returncode >= 0 else 128 - returncode)
 
